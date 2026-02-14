@@ -1,0 +1,13 @@
+input:
+  image_folder: ./data/images
+
+llm:
+  provider: openai
+  model: gpt-4o-mini
+  api_key_env: OPENAI_API_KEY
+
+duplicate_detection:
+  similarity_threshold: 0.85
+
+output:
+  base_folder: ./outputs
