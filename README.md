@@ -1,4 +1,4 @@
-# Survey Image Cleaner
+# Vision Data Image Cleaner
 
 LLM-powered pipeline for image de-duplication, validation, and dataset
 cleaning.
