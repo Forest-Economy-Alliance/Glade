@@ -30,7 +30,7 @@ large-scale field datasets.
 ## Installation
 
 ``` bash
-git clone https://github.com/your-org/vision-data-cleaning-pipeline.git
+git clone https://github.com/Forest-Economy-Alliance/vision-data-cleaning-pipeline
 cd vision-data-cleaning-pipeline
 
 python -m venv .venv
