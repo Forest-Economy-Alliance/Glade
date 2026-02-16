@@ -4,8 +4,7 @@ from .config import Config
 import os
 from .services.duplicate_exact import find_exact_duplicates
 from .utils.dedup import split_duplicates_by_phash
-from .services.near_duplicates_phash_embeddings import find_near_duplicates_phash_embeddings
-from .services.near_duplicates_hsv_cosine import find_near_duplicates_hsv_cosine
+from .services.near_duplicates_runner import run_near_duplicates
 from .utils.dedup import split_duplicates_by_phash
 
 app = FastAPI(title="Image Cleaner Pipeline")
@@ -39,55 +38,7 @@ def run_pipeline():
     print(f"Kept {len(kept_df)} unique images after exact deduplication")
     
     # Near-duplicate clustering based on active method in config
-    near_method = cfg.get("near_duplicates.active_method")
-    near_counts = {"groups": 0, "method": near_method, "csv": None}
-    try:
-        if near_method == "phash_embeddings" and cfg.get("near_duplicates.methods.phash_embeddings.enabled"):
-            phash_max_distance = cfg.get("near_duplicates.methods.phash_embeddings.phash_max_distance")
-            embed_sim_threshold = cfg.get("near_duplicates.methods.phash_embeddings.embed_similarity_threshold")
-            device = cfg.get("near_duplicates.methods.phash_embeddings.device")
-            out_sub = cfg.get("near_duplicates.methods.phash_embeddings.output_subfolder")
-            csv_name = cfg.get("near_duplicates.methods.phash_embeddings.csv_name")
-
-            near_df = find_near_duplicates_phash_embeddings(
-                df=kept_df,
-                image_dir=image_dir,
-                base_output_dir=output_dir,
-                phash_max_distance=phash_max_distance,
-                embed_similarity_threshold=embed_sim_threshold,
-                model_name="resnet50",
-                device=device,
-                output_subfolder=out_sub,
-                csv_name=csv_name,
-                copy_files=True,
-            )
-            near_counts["groups"] = int(near_df["group_id"].nunique()) if not near_df.empty else 0
-            near_counts["csv"] = os.path.join(output_dir, out_sub, csv_name)
-
-        elif near_method == "hsv_cosine" and cfg.get("near_duplicates.methods.hsv_cosine.enabled"):
-            image_size = tuple(cfg.get("near_duplicates.methods.hsv_cosine.image_size"))
-            hist_bins = tuple(cfg.get("near_duplicates.methods.hsv_cosine.hist_bins"))
-            ranges = tuple(cfg.get("near_duplicates.methods.hsv_cosine.ranges"))
-            sim_threshold = cfg.get("near_duplicates.methods.hsv_cosine.similarity_threshold")
-            out_sub = cfg.get("near_duplicates.methods.hsv_cosine.output_subfolder")
-            csv_name = cfg.get("near_duplicates.methods.hsv_cosine.csv_name")
-
-            near_df = find_near_duplicates_hsv_cosine(
-                df=kept_df,
-                image_dir=image_dir,
-                base_output_dir=output_dir,
-                image_size=image_size,
-                hist_bins=hist_bins,
-                ranges=ranges,
-                similarity_threshold=sim_threshold,
-                output_subfolder=out_sub,
-                csv_name=csv_name,
-                copy_files=True,
-            )
-            near_counts["groups"] = int(near_df["group_id"].nunique()) if not near_df.empty else 0
-            near_counts["csv"] = os.path.join(output_dir, out_sub, csv_name)
-    except ImportError as e:
-        near_counts["error"] = str(e)
+    near_counts = run_near_duplicates(kept_df=kept_df, image_dir=image_dir, output_dir=output_dir, cfg=cfg)
     # Return a simple summary
     return {
         "message": "Exact duplicate detection completed",
