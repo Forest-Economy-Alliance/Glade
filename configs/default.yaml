@@ -1,5 +1,5 @@
 input:
-  image_folder: ./data/images
+  image_folder: ../test_data
 
 llm:
   provider: openai
@@ -9,5 +9,34 @@ llm:
 duplicate_detection:
   similarity_threshold: 0.85
 
+
 output:
-  base_folder: ./outputs
+  base_folder: ../test_outputs
+
+# Near-duplicate clustering configuration
+near_duplicates:
+  active_method: phash_embeddings
+  methods:
+    phash_embeddings:
+      enabled: true
+      # pHash + embeddings thresholds
+      phash_max_distance: 20           # max Hamming distance between pHashes
+      embed_similarity_threshold: 0.75 # cosine similarity threshold for embeddings
+      # Embedding model options
+      model: resnet50                   # torchvision model name
+      device: auto                      # auto | cpu | cuda
+      # Outputs
+      output_subfolder: phash_embeddings
+      csv_name: near_duplicate_groups_phash_embeddings.csv
+
+    hsv_cosine:
+      enabled: false
+      # HSV histogram feature extraction
+      image_size: [256, 256]
+      hist_bins: [8, 8, 8]
+      ranges: [0, 180, 0, 256, 0, 256]
+      # Similarity threshold (cosine)
+      similarity_threshold: 0.90
+      # Outputs
+      output_subfolder: hsv_cosine
+      csv_name: near_duplicate_groups_hsv_cosine.csv

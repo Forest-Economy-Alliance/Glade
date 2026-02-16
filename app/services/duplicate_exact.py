@@ -4,8 +4,7 @@ import pandas as pd
 from pathlib import Path
 from collections import defaultdict
 from tqdm import tqdm
-
-from app.utils.image_hash import compute_phash
+from app.utils.image_hash import compute_file_hash
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
@@ -60,7 +59,8 @@ def find_exact_duplicates(
         if file.suffix.lower() not in IMAGE_EXTS:
             continue
 
-        phash = compute_phash(str(file))
+        phash = compute_file_hash(str(file))
+
 
         if phash:
             records.append({
@@ -123,4 +123,4 @@ def find_exact_duplicates(
     print(f"\n✅ Found {len(exact_df)} duplicate images")
     print(f"📄 CSV saved to {csv_path}")
 
-    return exact_df
+    return exact_df,df
