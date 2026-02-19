@@ -11,11 +11,11 @@ duplicate_detection:
 
 
 output:
-  base_folder: ../test_outputs
+  base_folder: ../test_outputs1
 
 # Near-duplicate clustering configuration
 near_duplicates:
-  active_method: phash_embeddings
+  active_method: hsv_cosine
   methods:
     phash_embeddings:
       enabled: true
@@ -30,7 +30,7 @@ near_duplicates:
       csv_name: near_duplicate_groups_phash_embeddings.csv
 
     hsv_cosine:
-      enabled: false
+      enabled: true
       # HSV histogram feature extraction
       image_size: [256, 256]
       hist_bins: [8, 8, 8]
