@@ -1,10 +1,16 @@
 input:
   image_folder: ../test_data
 
-llm:
+similarity_check_llm:
   provider: openai
   model: gpt-4o-mini
   api_key_env: OPENAI_API_KEY
+  enabled: true
+  temperature: 0
+  system_text: |
+    You are a visual verification agent. Determine whether ALL provided images depict the SAME real-world object or scene. Allow differences in angle, zoom, framing, and lighting. If any image clearly differs, return false. Respond only with a compact JSON object: is_duplicate_group (boolean), confidence (0..1), reason (short).
+  user_text: |
+    Analyze the images and return STRICT JSON with keys: is_duplicate_group, confidence, reason. No extra text.
 
 duplicate_detection:
   similarity_threshold: 0.85

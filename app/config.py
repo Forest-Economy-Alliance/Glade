@@ -10,5 +10,9 @@ class Config:
         keys = key.split(".")
         value = self.data
         for k in keys:
-            value = value.get(k, {})
-        return value or default
+            if not isinstance(value, dict):
+                return default
+            if k not in value:
+                return default
+            value = value[k]
+        return value
