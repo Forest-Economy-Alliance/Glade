@@ -5,10 +5,13 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-try:
-    import cv2
-except Exception:
-    cv2 = None
+
+def _require_cv2():
+    try:
+        import cv2 as cv2_module
+    except Exception as exc:
+        raise ImportError("OpenCV is required. Install: pip install opencv-python") from exc
+    return cv2_module
 
 
 def _cosine_similarity_matrix(X: np.ndarray) -> np.ndarray:
@@ -20,6 +23,7 @@ def _cosine_similarity_matrix(X: np.ndarray) -> np.ndarray:
 
 
 def _load_image_cv(path: str, image_size: Tuple[int, int]):
+    cv2 = _require_cv2()
     img = cv2.imread(path)
     if img is None:
         return None
@@ -29,6 +33,7 @@ def _load_image_cv(path: str, image_size: Tuple[int, int]):
 
 
 def _hsv_hist_feature(img, hist_bins: Tuple[int, int, int], ranges: Tuple[int, int, int, int, int, int]):
+    cv2 = _require_cv2()
     hist = cv2.calcHist([img], channels=[0, 1, 2], mask=None, histSize=list(hist_bins), ranges=list(ranges))
     hist = cv2.normalize(hist, hist).flatten()
     return hist
@@ -51,8 +56,7 @@ def find_near_duplicates_hsv_cosine(
     Returns a DataFrame of grouped near-duplicates and copies images into grouped folders.
     """
 
-    if cv2 is None:
-        raise ImportError("OpenCV is required. Install: pip install opencv-python")
+    _require_cv2()
 
     df = df.copy()
     df = df[df["image_name"].notna()].copy()
@@ -122,6 +126,6 @@ def find_near_duplicates_hsv_cosine(
         group_id += 1
 
     out_df = pd.DataFrame(rows)
-    out_csv = os.path.join(out_dir, csv_name)
+    out_csv = os.path.join(base_output_dir, csv_name)
     out_df.to_csv(out_csv, index=False)
     return out_df

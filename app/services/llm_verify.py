@@ -69,7 +69,7 @@ def _verify_openai(image_paths: List[str], llm_cfg: dict) -> dict:
     """Call OpenAI chat completions using the configured model/texts."""
 
     api_key_env = llm_cfg.get("api_key_env")
-    print("openai env var for key:", api_key_env)
+    # print("openai env var for key:", api_key_env)
     if not os.getenv("OPENAI_API_KEY"):
         raise EnvironmentError(f"OpenAI API key not found in env '{api_key_env}'")
 

@@ -62,14 +62,14 @@ def save_duplicate_groups(
             if copy_files and src.exists():
                 shutil.copy2(src, dst)
             elif not src.exists():
-                print(f"⚠️ Missing file: {src}")
+                print(f"Warning: Missing file: {src}")
 
     df = pd.DataFrame(records)
 
     csv_path = output_dir / csv_name
     df.to_csv(csv_path, index=False)
 
-    print(f"\n✅ Saved {len(df)} duplicate images")
-    print(f"📄 CSV saved to {csv_path}")
+    print(f"\nSaved {len(df)} duplicate images")
+    print(f"CSV saved to {csv_path}")
 
     return df

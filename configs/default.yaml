@@ -1,5 +1,5 @@
 input:
-  image_folder: ../test_data
+  image_folder: ../test_data1
 
 similarity_check_llm:
   provider: openai

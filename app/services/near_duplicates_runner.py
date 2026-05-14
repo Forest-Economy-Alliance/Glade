@@ -2,7 +2,6 @@ import os
 from typing import Dict
 import pandas as pd
 
-from .near_duplicates_phash_embeddings import find_near_duplicates_phash_embeddings
 from .near_duplicates_hsv_cosine import find_near_duplicates_hsv_cosine
 
 
@@ -22,6 +21,8 @@ def run_near_duplicates(
 
     try:
         if near_method == "phash_embeddings" and cfg.get("near_duplicates.methods.phash_embeddings.enabled"):
+            from .near_duplicates_phash_embeddings import find_near_duplicates_phash_embeddings
+
             phash_max_distance = cfg.get("near_duplicates.methods.phash_embeddings.phash_max_distance")
             embed_sim_threshold = cfg.get("near_duplicates.methods.phash_embeddings.embed_similarity_threshold")
             model_name = cfg.get("near_duplicates.methods.phash_embeddings.model")
@@ -42,7 +43,7 @@ def run_near_duplicates(
                 copy_files=True,
             )
             result["groups"] = int(near_df["group_id"].nunique()) if not near_df.empty else 0
-            result["csv"] = os.path.join(output_dir, out_sub, csv_name)
+            result["csv"] = os.path.join(output_dir, csv_name)
 
         elif near_method == "hsv_cosine" and cfg.get("near_duplicates.methods.hsv_cosine.enabled"):
             image_size = tuple(cfg.get("near_duplicates.methods.hsv_cosine.image_size"))
@@ -65,7 +66,7 @@ def run_near_duplicates(
                 copy_files=True,
             )
             result["groups"] = int(near_df["group_id"].nunique()) if not near_df.empty else 0
-            result["csv"] = os.path.join(output_dir, out_sub, csv_name)
+            result["csv"] = os.path.join(output_dir, csv_name)
 
         else:
             # Method disabled or unknown

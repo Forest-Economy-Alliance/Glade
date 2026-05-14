@@ -37,7 +37,7 @@ def run(csv_path: str, image_dir: str = None, provider: str = None, out_csv: str
         try:
             result = verify_duplicate_group(group_prefixed, image_dir, provider=provider)
         except Exception as e:
-            print(f"  ⚠️ Verification failed: {e}")
+            print(f"  Verification failed: {e}")
             failed_similarity_checks.add(gid)
             rows.append({
                 "group_id": gid,
@@ -50,11 +50,11 @@ def run(csv_path: str, image_dir: str = None, provider: str = None, out_csv: str
 
         if result.get("is_duplicate_group") is True:
             confirmed_duplicate_names.update(group)
-            print(f"  ✅ Duplicates confirmed (confidence={result['confidence']:.2f})")
+            print(f"  Duplicates confirmed (confidence={result['confidence']:.2f})")
         else:
             failed_similarity_checks.add(gid)
             llm_rejected_names.update(group)
-            print(f"  ❌ Not duplicates (confidence={result['confidence']:.2f})")
+            print(f"  Not duplicates (confidence={result['confidence']:.2f})")
             print(f"  Reason: {result['reason']}")
 
         rows.append({
@@ -66,14 +66,22 @@ def run(csv_path: str, image_dir: str = None, provider: str = None, out_csv: str
         })
 
     verified_count = len(groups) - len(failed_similarity_checks)
-    print(f"\n✅ Verified {verified_count} groups as duplicates")
+    print(f"\nVerified {verified_count} groups as duplicates")
 
     out_df = pd.DataFrame(rows)
     if out_csv is None:
         base = os.path.splitext(os.path.basename(csv_path))[0]
         out_csv = os.path.join(os.path.dirname(csv_path), f"{base}_llm_verified.csv")
-    out_df.to_csv(out_csv, index=False)
-    print(f"Wrote results to {out_csv}")
+    try:
+        out_df.to_csv(out_csv, index=False)
+    except PermissionError:
+        base = os.path.splitext(os.path.basename(out_csv))[0]
+        fallback_out_csv = os.path.join(os.path.dirname(out_csv), f"{base}_fallback.csv")
+        out_df.to_csv(fallback_out_csv, index=False)
+        print(f"Could not write {out_csv}; wrote fallback file: {fallback_out_csv}")
+        out_csv = fallback_out_csv
+
+    return confirmed_duplicate_names, llm_rejected_names, failed_similarity_checks, out_csv
 
 
 def main():

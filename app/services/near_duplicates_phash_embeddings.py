@@ -110,7 +110,7 @@ def find_near_duplicates_phash_embeddings(
     copy_files: bool = True,
 ) -> pd.DataFrame:
 
-    print("\n🔍 Near-duplicate detection (pHash + embeddings)")
+    print("\nNear-duplicate detection (pHash + embeddings)")
 
     image_dir = Path(image_dir)
     out_dir = Path(base_output_dir) / output_subfolder
@@ -213,8 +213,9 @@ def find_near_duplicates_phash_embeddings(
         gid += 1
 
     out_df = pd.DataFrame(rows)
-    out_df.to_csv(out_dir / csv_name, index=False)
+    csv_path = Path(base_output_dir) / csv_name
+    out_df.to_csv(csv_path, index=False)
 
-    print("CSV saved to:", out_dir / csv_name)
+    print("CSV saved to:", csv_path)
 
     return out_df

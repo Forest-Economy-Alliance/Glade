@@ -44,7 +44,7 @@ def find_exact_duplicates(
     exact_dir = base_output_dir / "exact_duplicates"
     exact_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n🔍 Computing pHashes...")
+    print("\nComputing pHashes...")
 
     records = []
 
@@ -71,10 +71,10 @@ def find_exact_duplicates(
     df = pd.DataFrame(records)
 
     if df.empty:
-        print("⚠️ No images processed.")
+        print("Warning: No images processed.")
         return df
 
-    print(f"✅ Processed {len(df)} images")
+    print(f"Processed {len(df)} images")
 
     # ----------------------------
     # 2️⃣ Group by hash
@@ -86,7 +86,7 @@ def find_exact_duplicates(
 
     exact_dups_records = []
 
-    print("\n📂 Saving duplicate groups...")
+    print("\nSaving duplicate groups...")
 
     for phash_value, images in phash_groups.items():
 
@@ -117,10 +117,10 @@ def find_exact_duplicates(
     # ----------------------------
     # 3️⃣ Save CSV
     # ----------------------------
-    csv_path = exact_dir / csv_name
+    csv_path = base_output_dir / csv_name
     exact_df.to_csv(csv_path, index=False)
 
-    print(f"\n✅ Found {len(exact_df)} duplicate images")
-    print(f"📄 CSV saved to {csv_path}")
+    print(f"\nFound {len(exact_df)} duplicate images")
+    print(f"CSV saved to {csv_path}")
 
     return exact_df,df

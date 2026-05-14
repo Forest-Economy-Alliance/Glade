@@ -55,7 +55,7 @@ def groups_folder_to_csv(groups_folder: str, out_csv: str) -> pd.DataFrame:
     df = pd.DataFrame(rows)
     df.to_csv(out_csv, index=False)
 
-    print(f"✅ CSV saved → {out_csv}")
+    print(f"CSV saved to {out_csv}")
     print(f"Groups: {df['group_id'].nunique()} | Images: {len(df)}")
 
     return df

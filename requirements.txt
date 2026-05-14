@@ -6,7 +6,9 @@ fastapi==0.129.0
 h11==0.16.0
 idna==3.11
 numpy==2.4.2
+opencv-python==4.10.0.84
 pandas==3.0.0
+Pillow==11.3.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-dateutil==2.9.0.post0
