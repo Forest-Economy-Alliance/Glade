@@ -181,6 +181,7 @@ def extract_originals_to_folder(
     )
 
     copied_count = 0
+    copied_names = []
 
     for _, row in originals_df.iterrows():
         group_id = row["group_id"]
@@ -188,9 +189,23 @@ def extract_originals_to_folder(
 
         src_path = merged_groups_root / group_id / original_image
         if src_path.exists():
-            dst_path = originals_folder / original_image
+            prefixed_name = f"{group_id}_{original_image}"
+            dst_path = originals_folder / prefixed_name
+            if dst_path.exists():
+                stem = Path(prefixed_name).stem
+                suffix = Path(prefixed_name).suffix
+                counter = 1
+                while dst_path.exists():
+                    dst_path = originals_folder / f"{stem}_{counter}{suffix}"
+                    counter += 1
             shutil.copy2(src_path, dst_path)
             copied_count += 1
+            copied_names.append(dst_path.name)
+        else:
+            copied_names.append(None)
+
+    originals_df = originals_df.copy()
+    originals_df["copied_image_name"] = copied_names
 
     return originals_df, copied_count
 

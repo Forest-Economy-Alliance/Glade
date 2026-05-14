@@ -1,109 +1,105 @@
-# Vision Data Image Cleaner
+# Vision Data Cleaning Pipeline
 
-LLM-powered pipeline for image de-duplication, validation, and dataset
-cleaning.
+Configurable FastAPI pipeline for image de-duplication and dataset preparation.
 
-A configurable FastAPI + CLI tool to clean large-scale survey image
-datasets using **pHash + embeddings + multi-LLM validation**.\
-Built for rural survey pipelines, geospatial data collection, and
-large-scale field datasets.
+## Project Phases
 
-------------------------------------------------------------------------
+### Phase 1 (Current): Duplicate Detection And Unique Image Generation
 
-## Features
+Phase 1 detects exact and near-duplicates, verifies near-duplicate groups with LLM, merges overlapping duplicate groups, extracts one original per duplicate cluster, and prepares final unique-image outputs for downstream processing.
 
--   Exact duplicate detection using pHash\
--   Near-duplicate detection using image embeddings\
--   Duplicate verification using OpenAI / Gemini / Claude\
--   Canonical image selection using survey timestamp logic\
--   Label validation with multi-LLM consensus\
--   Automatic grouping into:
-    -   Clean representative images\
-    -   Confirmed duplicates\
-    -   Images needing manual review\
--   Config-driven pipeline\
--   FastAPI service + CLI support\
--   CSV reports for auditing
+### Phase 2 (Planned): Label Validation And Quality Check
 
-------------------------------------------------------------------------
+Phase 2 will run validation workflows on Phase 1 unique outputs (for example label consistency checks and image quality checks).
 
 ## Installation
 
-``` bash
+```bash
 git clone https://github.com/Forest-Economy-Alliance/vision-data-cleaning-pipeline
 cd vision-data-cleaning-pipeline
 
 python -m venv .venv
-source .venv/bin/activate
+.venv\Scripts\activate
 
 pip install -r requirements.txt
 ```
 
-------------------------------------------------------------------------
+## Run API
 
-## Running API
-
-``` bash
-python -m uvicorn app.main:app --reload
+```bash
+uvicorn app.main:app --reload --port 8000
 ```
 
 Open: http://127.0.0.1:8000/docs
 
-------------------------------------------------------------------------
+## Configuration
 
-## Config Example
+Main config file: `configs/default.yaml`
 
-configs/default.yaml
+Important sections:
 
-``` yaml
-input:
-  image_folder: ./data/images
+- `input.image_folder`: source images folder
+- `output.base_folder`: output root folder
+- `near_duplicates.active_method`: active near-duplicate method
+- `similarity_check_llm.*`: LLM verification settings
+- `metadata.*`: fallback metadata CSV for original selection
 
-llm:
-  provider: openai
-  model: gpt-4o-mini
-  api_key_env: OPENAI_API_KEY
+Example metadata section:
 
-duplicate_detection:
-  similarity_threshold: 0.85
-
-output:
-  base_folder: ./outputs
+```yaml
+metadata:
+  csv_path: null
+  image_name_column: image_name
+  datetime_column: hh_information-datetime
 ```
 
-------------------------------------------------------------------------
+## Phase 1 Flow
+
+1. Exact duplicate detection creates `exact_duplicates` groups.
+2. Near-duplicate detection creates method-specific groups.
+3. LLM verifies near-duplicate groups.
+4. LLM-confirmed groups are copied into `exact_duplicates` with `llm_` prefix.
+5. Overlapping duplicate groups are merged into `exact_duplicates_merged`.
+6. One original image is selected per merged group using earliest timestamp:
+   - EXIF datetime first
+   - metadata CSV datetime fallback
+   - file modified time last fallback
+7. Selected originals are copied to `duplicates_original`.
+   - Copied filenames are made unique using `group_id` prefix (for example `merged_group_0003_IMG_1234.jpg`) to prevent overwrite.
+8. Final non-duplicate images are copied to `unique_images`.
+
+## Phase 1 Outputs
+
+All CSV files are written to output root.
+
+- `exact_duplicates.csv`
+- `near_duplicate_groups_hsv_cosine.csv` or `near_duplicate_groups.csv` (depends on active method)
+- `near_duplicates.csv`
+- `near_duplicates_llm_verified.csv`
+- `exact_duplicate_groups.csv`
+- `merged_groups_summary.csv`
+- `originals_extraction_summary.csv`
+- `unique_images.csv`
+
+Folders:
+
+- `exact_duplicates/`
+- `exact_duplicates_merged/`
+- `duplicates_original/`
+- `unique_images/`
 
 ## Environment Variables
 
-Create `.env` file:
+Use `.env` for secrets (example):
 
-    OPENAI_API_KEY=xxxx
-    GEMINI_API_KEY=xxxx
-    CLAUDE_API_KEY=xxxx
+```text
+OPENAI_API_KEY=xxxx
+GEMINI_API_KEY=xxxx
+CLAUDE_API_KEY=xxxx
+```
 
-Do NOT commit `.env` to GitHub.
-
-------------------------------------------------------------------------
-
-## Outputs
-
-    outputs/run_001/
-    ├── clean_images/
-    ├── duplicates/
-    ├── manual_review/
-    └── reports/
-
-------------------------------------------------------------------------
-
-## Developed By
-
-Built as part of data systems work at\
-Bharti Institute of Public Policy (ISB)
-
-Maintained by Nitesh Saini.
-
-------------------------------------------------------------------------
+Do not commit `.env`.
 
 ## License
 
-MIT License
+MIT

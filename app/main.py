@@ -230,6 +230,7 @@ def run_pipeline():
         )
         originals_extracted_count = int(copied_count)
         originals_extraction_summary_csv = os.path.join(output_dir, "originals_extraction_summary.csv")
+        originals_df.to_csv(originals_extraction_summary_csv, index=False)
         print(f"Extracted {copied_count} original images to: {originals_dir}")
     except (FileNotFoundError, ValueError) as exc:
         print(f"Skipping original extraction: {exc}")
