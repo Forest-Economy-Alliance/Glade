@@ -46,3 +46,9 @@ near_duplicates:
       # Outputs
       output_subfolder: hsv_cosine
       csv_name: near_duplicate_groups_hsv_cosine.csv
+
+# Metadata configuration for original image extraction
+metadata:
+  csv_path: "../metadata.csv"  # Path to metadata CSV file with image datetime info (e.g. ../metadata.csv)
+  image_name_column: "hh_services-house_photo_front"  # Column name in CSV containing image filenames
+  datetime_column: "hh_information-datetime"  # Column name in CSV containing capture datetime

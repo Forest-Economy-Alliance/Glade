@@ -10,6 +10,7 @@ from .services.near_duplicates_runner import run_near_duplicates
 from .services.llm_verify_runner import run as llm_verify_run
 from .utils.groups_folder_to_csv import groups_folder_to_csv
 from .utils.merge_duplicate_groups import merge_duplicate_folders
+from .utils.extract_originals import extract_originals_to_folder
 
 app = FastAPI(title="Image Cleaner Pipeline")
 
@@ -212,6 +213,29 @@ def run_pipeline():
     except Exception as exc:
         print(f"Merged duplicate group build failed: {exc}")
 
+    originals_dir = os.path.join(output_dir, "duplicates_original")
+    originals_extraction_summary_csv = None
+    originals_extracted_count = 0
+    try:
+        metadata_csv_path = cfg.get("metadata.csv_path")  # Optional: path to metadata CSV
+        image_name_col = cfg.get("metadata.image_name_column") or "image_name"
+        datetime_col = cfg.get("metadata.datetime_column") or "hh_information-datetime"
+        
+        originals_df, copied_count = extract_originals_to_folder(
+            merged_groups_root=Path(merged_duplicates_dir),
+            originals_folder=Path(originals_dir),
+            metadata_csv=metadata_csv_path,
+            image_name_column=image_name_col,
+            datetime_column=datetime_col,
+        )
+        originals_extracted_count = int(copied_count)
+        originals_extraction_summary_csv = os.path.join(output_dir, "originals_extraction_summary.csv")
+        print(f"Extracted {copied_count} original images to: {originals_dir}")
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"Skipping original extraction: {exc}")
+    except Exception as exc:
+        print(f"Original extraction failed: {exc}")
+
     unique_csv = os.path.join(output_dir, "unique_images.csv")
     unique_df = pd.DataFrame({"image_name": unique_image_names})
     unique_df.to_csv(unique_csv, index=False)
@@ -243,6 +267,7 @@ def run_pipeline():
             "final_duplicate_images": int(len(final_duplicate_names)),
             "unique_images": int(len(unique_image_names)),
             "merged_duplicate_groups": int(merged_duplicate_groups),
+            "original_images_extracted": int(originals_extracted_count),
         },
         "near_duplicates": near_counts,
         "output_dir": output_dir,
@@ -250,6 +275,8 @@ def run_pipeline():
         "exact_duplicate_groups_csv": exact_groups_csv,
         "merged_duplicate_groups_dir": merged_duplicates_dir,
         "merged_duplicate_groups_summary_csv": merged_groups_summary_csv,
+        "originals_dir": originals_dir,
+        "originals_extraction_summary_csv": originals_extraction_summary_csv,
         "unique_images_csv": unique_csv,
         "unique_images_dir": unique_images_dir,
         "llm_confirmed_groups_dir": exact_duplicates_root_dir,
