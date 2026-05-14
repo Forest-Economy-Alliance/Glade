@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vision Pipeline Config UI</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --ink: #0f172a;
+      --card: #ffffff;
+      --brand: #005f73;
+      --accent: #ee9b00;
+      --muted: #64748b;
+      --line: #d8dee9;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0%, #e8f4f8, transparent 35%),
+        radial-gradient(circle at 90% 15%, #fff3dc, transparent 32%),
+        var(--bg);
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 28px auto;
+      padding: 0 16px 24px;
+    }
+    .hero {
+      background: linear-gradient(125deg, var(--brand), #0a9396);
+      color: #fff;
+      border-radius: 16px;
+      padding: 22px 24px;
+      box-shadow: 0 8px 30px rgba(0, 95, 115, 0.2);
+      margin-bottom: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -90px auto;
+      width: 240px;
+      height: 240px;
+      background: radial-gradient(circle, rgba(255,255,255,0.2), transparent 64%);
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.2px;
+    }
+    .hero p { margin: 8px 0 0; opacity: 0.95; }
+    .brand-row {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+    }
+    .brand img {
+      width: auto;
+      height: 40px;
+      display: block;
+      border-radius: 4px;
+      background: #ffffff;
+      padding: 3px;
+    }
+    .brand img.ncount-logo {
+      height: 46px;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .btn {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .btn-primary { background: var(--accent); color: #1a1200; }
+    .btn-muted { background: #dbe8ee; color: #12303a; }
+    .btn[disabled] {
+      opacity: 0.75;
+      cursor: not-allowed;
+    }
+    .btn-loading {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(15, 23, 42, 0.25);
+      border-top-color: #1a1200;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+    .btn-loading.is-running .btn-spinner {
+      display: inline-block;
+    }
+
+    form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
+      animation: rise 320ms ease;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card h3 { margin: 0 0 10px; font-size: 17px; color: var(--brand); }
+    .grid { display: grid; gap: 9px; }
+    label { font-size: 12px; color: var(--muted); font-weight: 600; }
+    input, select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #fff;
+    }
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: #334155;
+    }
+    .check input { width: auto; }
+    .run {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .result {
+      margin-top: 16px;
+      background: #0b1220;
+      color: #d7e1ff;
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+      font-size: 12px;
+      line-height: 1.35;
+      border: 1px solid #1f2a44;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .status-line {
+      margin-top: 10px;
+      font-size: 13px;
+      color: #d7e1ff;
+      font-weight: 600;
+    }
+    @media (max-width: 780px) {
+      .brand-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .brand {
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="brand-row">
+      <div class="brand">
+        <img src="/ui/media/bipp.png" alt="BIPP logo" />
+        <img class="ncount-logo" src="/ui/media/nCount.png" alt="nCount logo" />
+      </div>
+    </div>
+
+    <div class="hero">
+      <h1>Vision Data Cleaning Control Panel</h1>
+      <p>Edit YAML config, control output file names, and run Phase 1 pipeline from UI.</p>
+      <div class="toolbar">
+        <a class="btn btn-muted" href="/docs" target="_blank">API Docs</a>
+        <a class="btn btn-muted" href="/ui/docs">Methods And Techniques</a>
+      </div>
+    </div>
+
+    <form method="post" action="/ui/save">
+      <section class="card">
+        <h3>Input and Output</h3>
+        <div class="grid">
+          <div>
+            <label>Input Image Folder</label>
+            <input name="input_image_folder" value="{{ cfg.get('input', {}).get('image_folder', '') }}" />
+          </div>
+          <div>
+            <label>Output Base Folder</label>
+            <input name="output_base_folder" value="{{ cfg.get('output', {}).get('base_folder', '') }}" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>LLM Verification</h3>
+        <div class="grid">
+          <label class="check"><input type="checkbox" name="llm_enabled" {% if cfg.get('similarity_check_llm', {}).get('enabled') %}checked{% endif %}/> Enabled</label>
+          <div>
+            <label>Provider</label>
+            {% set llm_provider = cfg.get('similarity_check_llm', {}).get('provider', 'openai') %}
+            <select name="llm_provider">
+              <option value="openai" {% if llm_provider == 'openai' %}selected{% endif %}>openai</option>
+              <option value="gemini" {% if llm_provider == 'gemini' %}selected{% endif %}>gemini</option>
+              <option value="claude" {% if llm_provider in ['claude', 'anthropic'] %}selected{% endif %}>claude</option>
+            </select>
+          </div>
+          <div>
+            <label>Model</label>
+            <input name="llm_model" value="{{ cfg.get('similarity_check_llm', {}).get('model', 'gpt-4o-mini') }}" />
+          </div>
+          <div>
+            <label>API Key Env</label>
+            <input name="llm_api_key_env" value="{{ cfg.get('similarity_check_llm', {}).get('api_key_env', 'OPENAI_API_KEY') }}" />
+          </div>
+          <div>
+            <label>Temperature</label>
+            <input name="llm_temperature" value="{{ cfg.get('similarity_check_llm', {}).get('temperature', 0) }}" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Near Duplicate Methods</h3>
+        <div class="grid">
+          <div>
+            <label>Active Method</label>
+            <select name="near_active_method">
+              {% set active_method = cfg.get('near_duplicates', {}).get('active_method', 'hsv_cosine') %}
+              <option value="hsv_cosine" {% if active_method == 'hsv_cosine' %}selected{% endif %}>hsv_cosine</option>
+              <option value="phash_embeddings" {% if active_method == 'phash_embeddings' %}selected{% endif %}>phash_embeddings</option>
+            </select>
+          </div>
+
+          <label class="check"><input type="checkbox" name="hsv_enabled" {% if cfg.get('near_duplicates', {}).get('methods', {}).get('hsv_cosine', {}).get('enabled') %}checked{% endif %}/> HSV enabled</label>
+          <div>
+            <label>HSV Similarity Threshold</label>
+            <input name="hsv_similarity_threshold" value="{{ cfg.get('near_duplicates', {}).get('methods', {}).get('hsv_cosine', {}).get('similarity_threshold', 0.9) }}" />
+          </div>
+          <div>
+            <label>HSV CSV Name</label>
+            <input name="hsv_csv_name" value="{{ cfg.get('near_duplicates', {}).get('methods', {}).get('hsv_cosine', {}).get('csv_name', 'near_duplicate_groups_hsv_cosine.csv') }}" />
+          </div>
+
+          <label class="check"><input type="checkbox" name="phash_enabled" {% if cfg.get('near_duplicates', {}).get('methods', {}).get('phash_embeddings', {}).get('enabled') %}checked{% endif %}/> pHash+Embeddings enabled</label>
+          <div>
+            <label>pHash Max Distance</label>
+            <input name="phash_max_distance" value="{{ cfg.get('near_duplicates', {}).get('methods', {}).get('phash_embeddings', {}).get('phash_max_distance', 20) }}" />
+          </div>
+          <div>
+            <label>Embedding Similarity Threshold</label>
+            <input name="phash_embed_similarity_threshold" value="{{ cfg.get('near_duplicates', {}).get('methods', {}).get('phash_embeddings', {}).get('embed_similarity_threshold', 0.75) }}" />
+          </div>
+          <div>
+            <label>pHash CSV Name</label>
+            <input name="phash_csv_name" value="{{ cfg.get('near_duplicates', {}).get('methods', {}).get('phash_embeddings', {}).get('csv_name', 'near_duplicate_groups.csv') }}" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Metadata Fallback Mapping</h3>
+        <div class="grid">
+          <div>
+            <label>Metadata CSV Path</label>
+            <input name="metadata_csv_path" value="{{ cfg.get('metadata', {}).get('csv_path', '') }}" />
+          </div>
+          <div>
+            <label>Image Name Column</label>
+            <input name="metadata_image_name_column" value="{{ cfg.get('metadata', {}).get('image_name_column', 'image_name') }}" />
+          </div>
+          <div>
+            <label>DateTime Column</label>
+            <input name="metadata_datetime_column" value="{{ cfg.get('metadata', {}).get('datetime_column', 'hh_information-datetime') }}" />
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Output CSV File Names</h3>
+        <div class="grid">
+          {% set fn = cfg.get('filenames', {}) %}
+          <div><label>exact_duplicates.csv</label><input name="exact_duplicates_csv" value="{{ fn.get('exact_duplicates_csv', 'exact_duplicates.csv') }}" /></div>
+          <div><label>near_duplicates.csv</label><input name="near_duplicates_csv" value="{{ fn.get('near_duplicates_csv', 'near_duplicates.csv') }}" /></div>
+          <div><label>near_duplicates_llm_verified.csv</label><input name="near_duplicates_llm_verified_csv" value="{{ fn.get('near_duplicates_llm_verified_csv', 'near_duplicates_llm_verified.csv') }}" /></div>
+          <div><label>exact_duplicate_groups.csv</label><input name="exact_duplicate_groups_csv" value="{{ fn.get('exact_duplicate_groups_csv', 'exact_duplicate_groups.csv') }}" /></div>
+          <div><label>merged_groups_summary.csv</label><input name="merged_groups_summary_csv" value="{{ fn.get('merged_groups_summary_csv', 'merged_groups_summary.csv') }}" /></div>
+          <div><label>originals_extraction_summary.csv</label><input name="originals_extraction_summary_csv" value="{{ fn.get('originals_extraction_summary_csv', 'originals_extraction_summary.csv') }}" /></div>
+          <div><label>unique_images.csv</label><input name="unique_images_csv" value="{{ fn.get('unique_images_csv', 'unique_images.csv') }}" /></div>
+        </div>
+      </section>
+
+      <div class="run">
+        <button class="btn btn-primary" type="submit">Save Config</button>
+      </div>
+    </form>
+
+    <div class="run" style="margin-top: 12px;">
+      <button id="run-phase1-btn" class="btn btn-primary btn-loading" type="button">
+        <span class="btn-spinner" aria-hidden="true"></span>
+        <span id="run-btn-label">Run Phase 1 Pipeline</span>
+      </button>
+    </div>
+
+    <div class="result" id="run-result-panel">
+      <strong>Last Run Result</strong>
+      <div id="run-status" class="status-line"></div>
+      <pre id="run-result-json">{% if last_run %}{{ last_run | tojson(indent=2) }}{% else %}No run has been executed yet.{% endif %}</pre>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const runBtn = document.getElementById("run-phase1-btn");
+      const runBtnLabel = document.getElementById("run-btn-label");
+      const statusEl = document.getElementById("run-status");
+      const resultEl = document.getElementById("run-result-json");
+
+      function setRunningState(isRunning) {
+        runBtn.disabled = isRunning;
+        runBtn.classList.toggle("is-running", isRunning);
+        runBtnLabel.textContent = isRunning ? "Running..." : "Run Phase 1 Pipeline";
+      }
+
+      async function pollJob(jobId) {
+        const res = await fetch(`/ui/run/status/${jobId}`);
+        if (!res.ok) {
+          throw new Error("Could not read job status");
+        }
+        return res.json();
+      }
+
+      async function startRun() {
+        setRunningState(true);
+        statusEl.textContent = "Starting run...";
+        resultEl.textContent = "Pipeline execution in progress...";
+
+        try {
+          const startRes = await fetch("/ui/run/start", { method: "POST" });
+          if (!startRes.ok) {
+            throw new Error("Could not start run");
+          }
+          const startData = await startRes.json();
+          const jobId = startData.job_id;
+
+          const timer = setInterval(async () => {
+            try {
+              const job = await pollJob(jobId);
+              if (job.status === "queued" || job.status === "running") {
+                statusEl.textContent = `Pipeline status: ${job.status}`;
+                return;
+              }
+
+              clearInterval(timer);
+              setRunningState(false);
+
+              if (job.status === "completed") {
+                statusEl.textContent = "Pipeline completed successfully.";
+                if (job.result) {
+                  resultEl.textContent = JSON.stringify(job.result, null, 2);
+                }
+              } else {
+                statusEl.textContent = `Pipeline failed: ${job.error || "unknown error"}`;
+                resultEl.textContent = `Run failed: ${job.error || "unknown error"}`;
+              }
+            } catch (pollErr) {
+              clearInterval(timer);
+              setRunningState(false);
+              statusEl.textContent = `Status check failed: ${pollErr.message}`;
+              resultEl.textContent = `Status check failed: ${pollErr.message}`;
+            }
+          }, 1500);
+        } catch (err) {
+          setRunningState(false);
+          statusEl.textContent = `Could not start: ${err.message}`;
+          resultEl.textContent = `Could not start: ${err.message}`;
+        }
+      }
+
+      runBtn.addEventListener("click", startRun);
+    })();
+  </script>
+</body>
+</html>

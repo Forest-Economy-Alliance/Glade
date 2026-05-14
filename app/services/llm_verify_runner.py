@@ -88,7 +88,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run LLM verification for near-duplicate groups")
     parser.add_argument("csv", help="Path to near-duplicate groups CSV (group_id,image_name)")
     parser.add_argument("--image-dir", help="Image directory (overrides config)")
-    parser.add_argument("--provider", choices=["openai", "gemini", "anthropic"], help="LLM provider to use (overrides config)")
+    parser.add_argument("--provider", choices=["openai", "gemini", "anthropic", "claude"], help="LLM provider to use (overrides config)")
     parser.add_argument("--out", help="Output CSV path (optional)")
     args = parser.parse_args()
 

@@ -216,7 +216,7 @@ def _verify_anthropic(image_paths: List[str], llm_cfg: dict) -> dict:
 def verify_duplicate_group(
     image_names: List[str],
     image_dir: str,
-    provider: Literal["openai", "gemini", "anthropic"] = None,
+    provider: Literal["openai", "gemini", "anthropic", "claude"] = None,
 ) -> Dict:
     """
     image_names: list of file names
@@ -246,7 +246,7 @@ def verify_duplicate_group(
     elif provider == "gemini":
         raw = _verify_gemini(image_paths, llm_cfg)
 
-    elif provider == "anthropic":
+    elif provider in {"anthropic", "claude"}:
         raw = _verify_anthropic(image_paths, llm_cfg)
 
     else:

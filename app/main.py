@@ -1,4 +1,7 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from .schemas import RunRequest
 from .config import Config
 import os
@@ -11,12 +14,140 @@ from .services.llm_verify_runner import run as llm_verify_run
 from .utils.groups_folder_to_csv import groups_folder_to_csv
 from .utils.merge_duplicate_groups import merge_duplicate_folders
 from .utils.extract_originals import extract_originals_to_folder
+import threading
+import uuid
 
-app = FastAPI(title="Image Cleaner Pipeline")
+app = FastAPI(title="Vision Data Image Cleaner")
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+app.mount(
+    "/ui/media",
+    StaticFiles(directory=str(Path(__file__).parent / "templates" / "media")),
+    name="ui-media",
+)
+LAST_RUN_RESULT = None
+RUN_JOBS = {}
 
 @app.get("/")
 def health():
     return {"status": "ok"} 
+
+
+def _as_bool(value: str | None) -> bool:
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_float(value: str | None, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_int(value: str | None, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+@app.get("/ui", response_class=HTMLResponse)
+def ui_home(request: Request):
+    cfg = Config()
+    return templates.TemplateResponse(
+        request,
+        "config_ui.html",
+        {
+            "cfg": cfg.data,
+            "last_run": LAST_RUN_RESULT,
+        },
+    )
+
+
+@app.get("/ui/docs", response_class=HTMLResponse)
+def ui_docs(request: Request):
+    return templates.TemplateResponse(request, "methods_docs.html", {})
+
+
+@app.post("/ui/save")
+async def ui_save_config(request: Request):
+    form = await request.form()
+    cfg = Config()
+
+    cfg.set("input.image_folder", str(form.get("input_image_folder") or ""))
+    cfg.set("output.base_folder", str(form.get("output_base_folder") or ""))
+
+    cfg.set("similarity_check_llm.enabled", _as_bool(form.get("llm_enabled")))
+    cfg.set("similarity_check_llm.provider", str(form.get("llm_provider") or "openai"))
+    cfg.set("similarity_check_llm.model", str(form.get("llm_model") or "gpt-4o-mini"))
+    cfg.set("similarity_check_llm.api_key_env", str(form.get("llm_api_key_env") or "OPENAI_API_KEY"))
+    cfg.set("similarity_check_llm.temperature", _as_float(form.get("llm_temperature"), 0.0))
+
+    active_method = str(form.get("near_active_method") or "hsv_cosine")
+    cfg.set("near_duplicates.active_method", active_method)
+    cfg.set("near_duplicates.methods.hsv_cosine.enabled", _as_bool(form.get("hsv_enabled")))
+    cfg.set("near_duplicates.methods.hsv_cosine.similarity_threshold", _as_float(form.get("hsv_similarity_threshold"), 0.90))
+    cfg.set("near_duplicates.methods.hsv_cosine.csv_name", str(form.get("hsv_csv_name") or "near_duplicate_groups_hsv_cosine.csv"))
+
+    cfg.set("near_duplicates.methods.phash_embeddings.enabled", _as_bool(form.get("phash_enabled")))
+    cfg.set("near_duplicates.methods.phash_embeddings.phash_max_distance", _as_int(form.get("phash_max_distance"), 20))
+    cfg.set("near_duplicates.methods.phash_embeddings.embed_similarity_threshold", _as_float(form.get("phash_embed_similarity_threshold"), 0.75))
+    cfg.set("near_duplicates.methods.phash_embeddings.csv_name", str(form.get("phash_csv_name") or "near_duplicate_groups.csv"))
+
+    cfg.set("metadata.csv_path", str(form.get("metadata_csv_path") or ""))
+    cfg.set("metadata.image_name_column", str(form.get("metadata_image_name_column") or "image_name"))
+    cfg.set("metadata.datetime_column", str(form.get("metadata_datetime_column") or "hh_information-datetime"))
+
+    cfg.set("filenames.exact_duplicates_csv", str(form.get("exact_duplicates_csv") or "exact_duplicates.csv"))
+    cfg.set("filenames.near_duplicates_csv", str(form.get("near_duplicates_csv") or "near_duplicates.csv"))
+    cfg.set("filenames.near_duplicates_llm_verified_csv", str(form.get("near_duplicates_llm_verified_csv") or "near_duplicates_llm_verified.csv"))
+    cfg.set("filenames.exact_duplicate_groups_csv", str(form.get("exact_duplicate_groups_csv") or "exact_duplicate_groups.csv"))
+    cfg.set("filenames.merged_groups_summary_csv", str(form.get("merged_groups_summary_csv") or "merged_groups_summary.csv"))
+    cfg.set("filenames.originals_extraction_summary_csv", str(form.get("originals_extraction_summary_csv") or "originals_extraction_summary.csv"))
+    cfg.set("filenames.unique_images_csv", str(form.get("unique_images_csv") or "unique_images.csv"))
+
+    cfg.save()
+    return RedirectResponse(url="/ui", status_code=303)
+
+
+@app.post("/ui/run")
+def ui_run_pipeline():
+    global LAST_RUN_RESULT
+    LAST_RUN_RESULT = run_pipeline()
+    return RedirectResponse(url="/ui", status_code=303)
+
+
+def _run_pipeline_job(job_id: str):
+    try:
+        RUN_JOBS[job_id]["status"] = "running"
+        result = run_pipeline()
+        RUN_JOBS[job_id]["status"] = "completed"
+        RUN_JOBS[job_id]["result"] = result
+    except Exception as exc:
+        RUN_JOBS[job_id]["status"] = "failed"
+        RUN_JOBS[job_id]["error"] = str(exc)
+
+
+@app.post("/ui/run/start")
+def ui_run_start():
+    job_id = str(uuid.uuid4())
+    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None}
+    thread = threading.Thread(target=_run_pipeline_job, args=(job_id,), daemon=True)
+    thread.start()
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/ui/run/status/{job_id}")
+def ui_run_status(job_id: str):
+    job = RUN_JOBS.get(job_id)
+    if not job:
+        return {"status": "not_found", "result": None, "error": "job not found"}
+    return {
+        "status": job.get("status"),
+        "result": job.get("result"),
+        "error": job.get("error"),
+    }
 
 
 def _normalize_candidate_name(name: str, input_names: set[str]) -> str:
@@ -32,6 +163,7 @@ def _normalize_candidate_name(name: str, input_names: set[str]) -> str:
 
 @app.post("/run")
 def run_pipeline():
+    global LAST_RUN_RESULT
     # Load defaults from YAML config
     print("Loading configuration...")
     cfg = Config()
@@ -39,6 +171,13 @@ def run_pipeline():
     # Resolve inputs with request overrides where available
     image_dir = cfg.get("input.image_folder")
     output_dir = cfg.get("output.base_folder")
+    exact_duplicates_csv_name = cfg.get("filenames.exact_duplicates_csv", "exact_duplicates.csv")
+    near_duplicates_csv_name = cfg.get("filenames.near_duplicates_csv", "near_duplicates.csv")
+    verified_csv_name = cfg.get("filenames.near_duplicates_llm_verified_csv", "near_duplicates_llm_verified.csv")
+    exact_duplicate_groups_csv_name = cfg.get("filenames.exact_duplicate_groups_csv", "exact_duplicate_groups.csv")
+    merged_groups_summary_csv_name = cfg.get("filenames.merged_groups_summary_csv", "merged_groups_summary.csv")
+    originals_extraction_summary_csv_name = cfg.get("filenames.originals_extraction_summary_csv", "originals_extraction_summary.csv")
+    unique_images_csv_name = cfg.get("filenames.unique_images_csv", "unique_images.csv")
     print(f"Running pipeline with image_dir={image_dir}, output_dir={output_dir}")
 
     # Run exact duplicate detection (pHash-based)
@@ -46,7 +185,7 @@ def run_pipeline():
         image_dir=image_dir,
         base_output_dir=output_dir,
         copy_files=True,
-        csv_name="exact_duplicates.csv",
+        csv_name=exact_duplicates_csv_name,
     )
 
     all_input_names = set(df["image_name"].astype(str).tolist()) if not df.empty else set()
@@ -62,7 +201,7 @@ def run_pipeline():
     near_counts = run_near_duplicates(kept_df=kept_df, image_dir=image_dir, output_dir=output_dir, cfg=cfg)
 
     groups_folder = os.path.join(output_dir, cfg.get("near_duplicates.active_method"))
-    near_csv = os.path.join(output_dir, "near_duplicates.csv")
+    near_csv = os.path.join(output_dir, near_duplicates_csv_name)
     near_groups_df = pd.DataFrame(columns=["group_id", "image_name"])
     near_csv_ready = False
 
@@ -89,7 +228,7 @@ def run_pipeline():
     # Run LLM verification only if enabled in config
     llm_cfg = cfg.get("similarity_check_llm") or cfg.get("llm") or {}
     if llm_cfg.get("enabled"):
-        verified_csv = os.path.join(output_dir, "near_duplicates_llm_verified.csv")
+        verified_csv = os.path.join(output_dir, verified_csv_name)
         if near_csv_ready and os.path.exists(near_csv):
             try:
                 provider = llm_cfg.get("provider")
@@ -121,7 +260,7 @@ def run_pipeline():
     final_duplicate_names = exact_duplicate_names | near_llm_confirmed_names
     unique_image_names = sorted(all_input_names - final_duplicate_names)
 
-    exact_groups_csv = os.path.join(output_dir, "exact_duplicate_groups.csv")
+    exact_groups_csv = os.path.join(output_dir, exact_duplicate_groups_csv_name)
     exact_duplicates_root_dir = os.path.join(output_dir, "exact_duplicates")
     os.makedirs(exact_duplicates_root_dir, exist_ok=True)
 
@@ -195,7 +334,7 @@ def run_pipeline():
     exact_groups_df.to_csv(exact_groups_csv, index=False)
 
     merged_duplicates_dir = os.path.join(output_dir, "exact_duplicates_merged")
-    merged_groups_summary_csv = os.path.join(output_dir, "merged_groups_summary.csv")
+    merged_groups_summary_csv = os.path.join(output_dir, merged_groups_summary_csv_name)
     merged_duplicate_groups = 0
     try:
         merged_summary_df = merge_duplicate_folders(
@@ -229,7 +368,7 @@ def run_pipeline():
             datetime_column=datetime_col,
         )
         originals_extracted_count = int(copied_count)
-        originals_extraction_summary_csv = os.path.join(output_dir, "originals_extraction_summary.csv")
+        originals_extraction_summary_csv = os.path.join(output_dir, originals_extraction_summary_csv_name)
         originals_df.to_csv(originals_extraction_summary_csv, index=False)
         print(f"Extracted {copied_count} original images to: {originals_dir}")
     except (FileNotFoundError, ValueError) as exc:
@@ -237,7 +376,7 @@ def run_pipeline():
     except Exception as exc:
         print(f"Original extraction failed: {exc}")
 
-    unique_csv = os.path.join(output_dir, "unique_images.csv")
+    unique_csv = os.path.join(output_dir, unique_images_csv_name)
     unique_df = pd.DataFrame({"image_name": unique_image_names})
     unique_df.to_csv(unique_csv, index=False)
 
@@ -257,7 +396,7 @@ def run_pipeline():
         f"Unique images: {len(unique_image_names)}"
     )
     # Return a simple summary
-    return {
+    result = {
         "message": "Pipeline completed",
         "counts": {
             "duplicates_removed": int(len(removed_df)),
@@ -282,3 +421,5 @@ def run_pipeline():
         "unique_images_dir": unique_images_dir,
         "llm_confirmed_groups_dir": exact_duplicates_root_dir,
     }
+    LAST_RUN_RESULT = result
+    return result

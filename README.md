@@ -32,6 +32,21 @@ uvicorn app.main:app --reload --port 8000
 
 Open: http://127.0.0.1:8000/docs
 
+## UI Dashboard
+
+After starting the API, open:
+
+- `http://127.0.0.1:8000/ui` to manage config values and output CSV file names, then run Phase 1
+- `http://127.0.0.1:8000/ui/docs` to read methods and technique documentation
+
+UI coverage includes:
+
+- Input/output paths
+- LLM provider/model/toggles
+- Near-duplicate method settings
+- Metadata fallback mapping columns
+- Root CSV output file naming
+
 ## Configuration
 
 Main config file: `configs/default.yaml`

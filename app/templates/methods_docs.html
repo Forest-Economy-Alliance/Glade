@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Methods And Techniques</title>
+  <style>
+    :root {
+      --bg: #f9f6f2;
+      --ink: #1f2937;
+      --brand: #7c2d12;
+      --card: #ffffff;
+      --line: #e5e7eb;
+      --muted: #6b7280;
+    }
+    body { margin: 0; font-family: "Segoe UI", "Noto Sans", sans-serif; color: var(--ink); background: var(--bg); }
+    .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px 24px; }
+    .brand-row {
+      display: flex;
+      justify-content: flex-start;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+    }
+    .brand img {
+      width: auto;
+      height: 34px;
+      display: block;
+      border-radius: 4px;
+      background: #ffffff;
+      padding: 3px;
+    }
+    h1 { margin: 0 0 12px; color: var(--brand); }
+    .toplink { margin-bottom: 16px; display: inline-block; color: #0f766e; text-decoration: none; font-weight: 600; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    h2 { margin: 0 0 8px; font-size: 20px; }
+    h3 { margin: 10px 0 6px; font-size: 16px; }
+    p, li { color: #334155; line-height: 1.45; }
+    ul { margin: 6px 0 0 18px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 5px; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand-row">
+      <div class="brand">
+        <img src="/ui/media/bipp.png" alt="BIPP logo" />
+        <img src="/ui/media/nCount.png" alt="nCount logo" />
+      </div>
+    </div>
+    <a class="toplink" href="/ui">Back To Config UI</a>
+    <h1>Phase 1 Methods And Techniques</h1>
+
+    <section class="card">
+      <h2>Exact Duplicate Detection</h2>
+      <p>Technique: perceptual hash (pHash-like) fingerprinting from <code>compute_file_hash</code>.</p>
+      <ul>
+        <li>Images with identical hash are treated as exact duplicates.</li>
+        <li>Groups are written under <code>exact_duplicates/phash_*</code>.</li>
+        <li>CSV output: <code>exact_duplicates.csv</code> at output root.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Near Duplicate Detection</h2>
+      <h3>Method A: HSV Histogram + Cosine Similarity</h3>
+      <ul>
+        <li>Computes HSV histogram vector per image.</li>
+        <li>Uses cosine similarity matrix to cluster near duplicates.</li>
+        <li>Threshold controlled by <code>near_duplicates.methods.hsv_cosine.similarity_threshold</code>.</li>
+      </ul>
+
+      <h3>Method B: pHash Distance + Embedding Similarity</h3>
+      <ul>
+        <li>First gate: pHash Hamming distance.</li>
+        <li>Second gate: ResNet embedding cosine similarity.</li>
+        <li>Thresholds controlled by <code>phash_max_distance</code> and <code>embed_similarity_threshold</code>.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>LLM Verification</h2>
+      <ul>
+        <li>Runs on near-duplicate groups CSV.</li>
+        <li>Provider and model are configurable in <code>similarity_check_llm</code>.</li>
+        <li>Confirmed groups are copied into <code>exact_duplicates/llm_*</code>.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Group Merging Logic</h2>
+      <ul>
+        <li>Builds a folder graph where two groups are connected if they share image names.</li>
+        <li>Connected components become final merged clusters in <code>exact_duplicates_merged/merged_group_*</code>.</li>
+        <li>Cluster summary CSV: <code>merged_groups_summary.csv</code>.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Original Image Selection Per Group</h2>
+      <ul>
+        <li>Selects one original image per merged group by earliest timestamp.</li>
+        <li>Timestamp priority: EXIF datetime -> metadata CSV datetime -> file modified time.</li>
+        <li>Originals copied to <code>duplicates_original</code> with unique names like <code>groupid_filename</code>.</li>
+        <li>Summary CSV: <code>originals_extraction_summary.csv</code>.</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>Final Unique Image Output</h2>
+      <ul>
+        <li>Final duplicates = exact duplicates + LLM-confirmed near duplicates.</li>
+        <li>Unique set = input images - final duplicates.</li>
+        <li>Copied into <code>unique_images</code> and listed in <code>unique_images.csv</code>.</li>
+      </ul>
+      <p class="muted">Phase 2 will run label validation and quality checks on this Phase 1 unique output.</p>
+    </section>
+  </div>
+</body>
+</html>

@@ -1,54 +1,65 @@
 input:
   image_folder: ../test_data1
-
 similarity_check_llm:
-  provider: openai
+  provider: claude
   model: gpt-4o-mini
   api_key_env: OPENAI_API_KEY
   enabled: true
-  temperature: 0
-  system_text: |
-    You are a visual verification agent. Determine whether ALL provided images depict the SAME real-world object or scene. Allow differences in angle, zoom, framing, and lighting. If any image clearly differs, return false. Respond only with a compact JSON object: is_duplicate_group (boolean), confidence (0..1), reason (short).
-  user_text: |
-    Analyze the images and return STRICT JSON with keys: is_duplicate_group, confidence, reason. No extra text.
+  temperature: 0.0
+  system_text: 'You are a visual verification agent. Determine whether ALL provided
+    images depict the SAME real-world object or scene. Allow differences in angle,
+    zoom, framing, and lighting. If any image clearly differs, return false. Respond
+    only with a compact JSON object: is_duplicate_group (boolean), confidence (0..1),
+    reason (short).
 
+    '
+  user_text: 'Analyze the images and return STRICT JSON with keys: is_duplicate_group,
+    confidence, reason. No extra text.
+
+    '
 duplicate_detection:
   similarity_threshold: 0.85
-
-
 output:
-  base_folder: ../test_outputs1
-
-# Near-duplicate clustering configuration
+  base_folder: ../test_outputs4
 near_duplicates:
   active_method: hsv_cosine
   methods:
     phash_embeddings:
       enabled: true
-      # pHash + embeddings thresholds
-      phash_max_distance: 20           # max Hamming distance between pHashes
-      embed_similarity_threshold: 0.75 # cosine similarity threshold for embeddings
-      # Embedding model options
-      model: resnet50                   # torchvision model name
-      device: auto                      # auto | cpu | cuda
-      # Outputs
+      phash_max_distance: 20
+      embed_similarity_threshold: 0.75
+      model: resnet50
+      device: auto
       output_subfolder: phash_embeddings
       csv_name: near_duplicate_groups_phash_embeddings.csv
-
     hsv_cosine:
       enabled: true
-      # HSV histogram feature extraction
-      image_size: [256, 256]
-      hist_bins: [8, 8, 8]
-      ranges: [0, 180, 0, 256, 0, 256]
-      # Similarity threshold (cosine)
-      similarity_threshold: 0.90
-      # Outputs
+      image_size:
+      - 256
+      - 256
+      hist_bins:
+      - 8
+      - 8
+      - 8
+      ranges:
+      - 0
+      - 180
+      - 0
+      - 256
+      - 0
+      - 256
+      similarity_threshold: 0.9
       output_subfolder: hsv_cosine
       csv_name: near_duplicate_groups_hsv_cosine.csv
-
-# Metadata configuration for original image extraction
 metadata:
-  csv_path: "../metadata.csv"  # Path to metadata CSV file with image datetime info (e.g. ../metadata.csv)
-  image_name_column: "hh_services-house_photo_front"  # Column name in CSV containing image filenames
-  datetime_column: "hh_information-datetime"  # Column name in CSV containing capture datetime
+  csv_path: ../metadata.csv
+  image_name_column: hh_services-house_photo_front
+  datetime_column: hh_information-datetime
+filenames:
+  exact_duplicates_csv: exact_duplicates.csv
+  near_duplicates_csv: near_duplicates.csv
+  near_duplicates_llm_verified_csv: near_duplicates_llm_verified.csv
+  exact_duplicate_groups_csv: exact_duplicate_groups.csv
+  merged_groups_summary_csv: merged_groups_summary.csv
+  originals_extraction_summary_csv: originals_extraction_summary.csv
+  unique_images_csv: unique_images.csv
