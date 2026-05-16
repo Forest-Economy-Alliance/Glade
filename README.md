@@ -8,9 +8,14 @@ Configurable FastAPI pipeline for image de-duplication and dataset preparation.
 
 Phase 1 detects exact and near-duplicates, verifies near-duplicate groups with LLM, merges overlapping duplicate groups, extracts one original per duplicate cluster, and prepares final unique-image outputs for downstream processing.
 
-### Phase 2 (Planned): Label Validation And Quality Check
+### Phase 2: Label Validation And Quality Check
 
-Phase 2 will run validation workflows on Phase 1 unique outputs (for example label consistency checks and image quality checks).
+Phase 2 runs LLM-based validation on Phase 1 unique outputs:
+
+- Choose provider per run: OpenAI, Gemini, or Claude
+- Dataset-specific prompt design (system and user prompts are fully configurable)
+- Model JSON output extraction using configurable output keys
+- Pass/fail based on configurable expected values for each output key
 
 ## Installation
 
@@ -36,8 +41,13 @@ Open: http://127.0.0.1:8000/docs
 
 After starting the API, open:
 
-- `http://127.0.0.1:8000/ui` to manage config values and output CSV file names, then run Phase 1
+- `http://127.0.0.1:8000/ui` to manage config values and output CSV file names, then run pipeline
 - `http://127.0.0.1:8000/ui/docs` to read methods and technique documentation
+
+The UI provides separate run actions:
+
+- Run Phase 1 to generate `unique_images`
+- Run Phase 2 independently on a configurable input folder (defaults to `output/unique_images`)
 
 UI coverage includes:
 
@@ -46,6 +56,7 @@ UI coverage includes:
 - Near-duplicate method settings
 - Metadata fallback mapping columns
 - Root CSV output file naming
+- Phase 2 LLM provider, prompts, output schema, and expected-value settings
 
 ## Configuration
 
@@ -58,6 +69,12 @@ Important sections:
 - `near_duplicates.active_method`: active near-duplicate method
 - `similarity_check_llm.*`: LLM verification settings
 - `metadata.*`: fallback metadata CSV for original selection
+- `phase2.*`: LLM label validation and quality checks after unique image generation
+
+Important Phase 2 fields:
+
+- `phase2.input_folder`: folder of images to validate in Phase 2
+- `phase2.llm.*`: provider/model/api key env/prompts
 
 Example metadata section:
 
@@ -95,6 +112,14 @@ All CSV files are written to output root.
 - `merged_groups_summary.csv`
 - `originals_extraction_summary.csv`
 - `unique_images.csv`
+
+## Phase 2 Outputs (when enabled)
+
+All CSV files are written to output root.
+
+- `phase2_validation_report.csv`: per-image LLM output fields + pass/fail + raw JSON
+- `phase2_failed_images.csv`: images that do not match expected output values or failed validation
+- `phase2_summary.csv`: aggregate counters and selected provider/model details
 
 Folders:
 

@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from .schemas import RunRequest
 from .config import Config
+import json
 import os
 import shutil
 from pathlib import Path
@@ -14,6 +15,7 @@ from .services.llm_verify_runner import run as llm_verify_run
 from .utils.groups_folder_to_csv import groups_folder_to_csv
 from .utils.merge_duplicate_groups import merge_duplicate_folders
 from .utils.extract_originals import extract_originals_to_folder
+from .services.phase2_validation import run_phase2_validation
 import threading
 import uuid
 
@@ -50,6 +52,30 @@ def _as_int(value: str | None, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _as_list(value: str | None) -> list[str]:
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _as_json_dict(value: str | None, default: dict) -> dict:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return default
 
 
 @app.get("/ui", response_class=HTMLResponse)
@@ -106,6 +132,24 @@ async def ui_save_config(request: Request):
     cfg.set("filenames.merged_groups_summary_csv", str(form.get("merged_groups_summary_csv") or "merged_groups_summary.csv"))
     cfg.set("filenames.originals_extraction_summary_csv", str(form.get("originals_extraction_summary_csv") or "originals_extraction_summary.csv"))
     cfg.set("filenames.unique_images_csv", str(form.get("unique_images_csv") or "unique_images.csv"))
+    cfg.set("filenames.phase2_validation_report_csv", str(form.get("phase2_validation_report_csv") or "phase2_validation_report.csv"))
+    cfg.set("filenames.phase2_failed_images_csv", str(form.get("phase2_failed_images_csv") or "phase2_failed_images.csv"))
+    cfg.set("filenames.phase2_summary_csv", str(form.get("phase2_summary_csv") or "phase2_summary.csv"))
+
+    cfg.set("phase2.enabled", _as_bool(form.get("phase2_enabled")))
+    cfg.set("phase2.output_keys", _as_list(form.get("phase2_output_keys")))
+    cfg.set("phase2.expected_values", _as_json_dict(form.get("phase2_expected_values"), {}))
+    cfg.set("phase2.retry_max", _as_int(form.get("phase2_retry_max"), 3))
+    cfg.set("phase2.throttle_seconds", _as_float(form.get("phase2_throttle_seconds"), 0.0))
+    cfg.set("phase2.input_folder", str(form.get("phase2_input_folder") or ""))
+
+    cfg.set("phase2.llm.provider", str(form.get("phase2_llm_provider") or "openai"))
+    cfg.set("phase2.llm.model", str(form.get("phase2_llm_model") or "gpt-4o-mini"))
+    cfg.set("phase2.llm.api_key_env", str(form.get("phase2_llm_api_key_env") or "OPENAI_API_KEY"))
+    cfg.set("phase2.llm.temperature", _as_float(form.get("phase2_llm_temperature"), 0.0))
+    cfg.set("phase2.llm.max_tokens", _as_int(form.get("phase2_llm_max_tokens"), 300))
+    cfg.set("phase2.llm.system_prompt", str(form.get("phase2_system_prompt") or ""))
+    cfg.set("phase2.llm.user_prompt", str(form.get("phase2_user_prompt") or ""))
 
     cfg.save()
     return RedirectResponse(url="/ui", status_code=303)
@@ -114,14 +158,25 @@ async def ui_save_config(request: Request):
 @app.post("/ui/run")
 def ui_run_pipeline():
     global LAST_RUN_RESULT
-    LAST_RUN_RESULT = run_pipeline()
+    LAST_RUN_RESULT = run_pipeline(run_phase2=False)
     return RedirectResponse(url="/ui", status_code=303)
 
 
 def _run_pipeline_job(job_id: str):
     try:
         RUN_JOBS[job_id]["status"] = "running"
-        result = run_pipeline()
+        result = run_pipeline(run_phase2=False)
+        RUN_JOBS[job_id]["status"] = "completed"
+        RUN_JOBS[job_id]["result"] = result
+    except Exception as exc:
+        RUN_JOBS[job_id]["status"] = "failed"
+        RUN_JOBS[job_id]["error"] = str(exc)
+
+
+def _run_phase2_job(job_id: str):
+    try:
+        RUN_JOBS[job_id]["status"] = "running"
+        result = run_phase2_only()
         RUN_JOBS[job_id]["status"] = "completed"
         RUN_JOBS[job_id]["result"] = result
     except Exception as exc:
@@ -132,8 +187,17 @@ def _run_pipeline_job(job_id: str):
 @app.post("/ui/run/start")
 def ui_run_start():
     job_id = str(uuid.uuid4())
-    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None}
+    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase1"}
     thread = threading.Thread(target=_run_pipeline_job, args=(job_id,), daemon=True)
+    thread.start()
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/ui/run/phase2/start")
+def ui_run_phase2_start():
+    job_id = str(uuid.uuid4())
+    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase2"}
+    thread = threading.Thread(target=_run_phase2_job, args=(job_id,), daemon=True)
     thread.start()
     return {"job_id": job_id, "status": "queued"}
 
@@ -147,6 +211,7 @@ def ui_run_status(job_id: str):
         "status": job.get("status"),
         "result": job.get("result"),
         "error": job.get("error"),
+        "phase": job.get("phase"),
     }
 
 
@@ -162,7 +227,7 @@ def _normalize_candidate_name(name: str, input_names: set[str]) -> str:
     return name
 
 @app.post("/run")
-def run_pipeline():
+def run_pipeline(run_phase2: bool = False):
     global LAST_RUN_RESULT
     # Load defaults from YAML config
     print("Loading configuration...")
@@ -388,6 +453,17 @@ def run_pipeline():
         if os.path.isfile(src):
             shutil.copy2(src, dst)
 
+    phase2_result = None
+    if run_phase2:
+        try:
+            phase2_result = run_phase2_only()
+        except Exception as exc:
+            phase2_result = {
+                "enabled": True,
+                "error": str(exc),
+            }
+            print(f"Phase 2 failed after Phase 1: {exc}")
+
     print(
         f"Total input images: {len(all_input_names)} | "
         f"Exact duplicate images: {len(exact_duplicate_names)} | "
@@ -420,6 +496,37 @@ def run_pipeline():
         "unique_images_csv": unique_csv,
         "unique_images_dir": unique_images_dir,
         "llm_confirmed_groups_dir": exact_duplicates_root_dir,
+        "phase2": phase2_result,
+    }
+    LAST_RUN_RESULT = result
+    return result
+
+
+@app.post("/run/phase2")
+def run_phase2_only():
+    global LAST_RUN_RESULT
+    cfg = Config()
+
+    output_dir = cfg.get("output.base_folder")
+    unique_images_csv_name = cfg.get("filenames.unique_images_csv", "unique_images.csv")
+    unique_csv = os.path.join(output_dir, unique_images_csv_name)
+
+    configured_phase2_folder = str(cfg.get("phase2.input_folder") or "").strip()
+    unique_images_dir = configured_phase2_folder or os.path.join(output_dir, "unique_images")
+
+    phase2_result = run_phase2_validation(
+        cfg=cfg,
+        image_dir=unique_images_dir,
+        output_dir=output_dir,
+        unique_images_csv_path=unique_csv,
+        unique_images_dir_path=unique_images_dir,
+    )
+
+    result = {
+        "message": "Phase 2 completed",
+        "phase2_input_folder": unique_images_dir,
+        "output_dir": output_dir,
+        "phase2": phase2_result,
     }
     LAST_RUN_RESULT = result
     return result

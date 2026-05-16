@@ -55,6 +55,32 @@ metadata:
   csv_path: ../metadata.csv
   image_name_column: hh_services-house_photo_front
   datetime_column: hh_information-datetime
+phase2:
+  enabled: false
+  input_folder: ../test_outputs4/unique_images
+  output_keys:
+  - is_house
+  - has_front_gate
+  - is_blur
+  - is_front_view
+  expected_values:
+    is_house: true
+    has_front_gate: true
+    is_blur: false
+    is_front_view: true
+  retry_max: 3
+  throttle_seconds: 0.6
+  llm:
+    provider: openai
+    model: gpt-4o-mini
+    api_key_env: OPENAI_API_KEY
+    temperature: 0.0
+    max_tokens: 300
+    system_prompt: 'You are a careful, conservative, context-aware vision assistant
+      analyzing images from rural and semi-rural India. Respond only with compact
+      JSON and no extra text.'
+    user_prompt: 'Analyze this image and return strict JSON with keys: is_house,
+      has_front_gate, is_blur, is_front_view. Use true or false only.'
 filenames:
   exact_duplicates_csv: exact_duplicates.csv
   near_duplicates_csv: near_duplicates.csv
@@ -63,3 +89,6 @@ filenames:
   merged_groups_summary_csv: merged_groups_summary.csv
   originals_extraction_summary_csv: originals_extraction_summary.csv
   unique_images_csv: unique_images.csv
+  phase2_validation_report_csv: phase2_validation_report.csv
+  phase2_failed_images_csv: phase2_failed_images.csv
+  phase2_summary_csv: phase2_summary.csv

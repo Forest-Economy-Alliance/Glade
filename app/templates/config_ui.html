@@ -129,6 +129,9 @@
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
       gap: 14px;
     }
+    .full {
+      grid-column: 1 / -1;
+    }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -144,13 +147,18 @@
     .card h3 { margin: 0 0 10px; font-size: 17px; color: var(--brand); }
     .grid { display: grid; gap: 9px; }
     label { font-size: 12px; color: var(--muted); font-weight: 600; }
-    input, select {
+    input, select, textarea {
       width: 100%;
       padding: 8px 10px;
       border: 1px solid #cbd5e1;
       border-radius: 8px;
       font-size: 14px;
       background: #fff;
+    }
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
     }
     .check {
       display: flex;
@@ -209,7 +217,7 @@
 
     <div class="hero">
       <h1>Vision Data Cleaning Control Panel</h1>
-      <p>Edit YAML config, control output file names, and run Phase 1 pipeline from UI.</p>
+      <p>Edit YAML config, choose LLM providers, customize prompts, and run Phase 1 and Phase 2 separately.</p>
       <div class="toolbar">
         <a class="btn btn-muted" href="/docs" target="_blank">API Docs</a>
         <a class="btn btn-muted" href="/ui/docs">Methods And Techniques</a>
@@ -217,6 +225,16 @@
     </div>
 
     <form method="post" action="/ui/save">
+      <section id="phase1-panel" class="card full">
+        <h3>Phase 1: Duplicate Detection Pipeline</h3>
+        <div class="run">
+          <button id="run-phase1-btn" class="btn btn-primary btn-loading" type="button">
+            <span class="btn-spinner" aria-hidden="true"></span>
+            <span id="run-phase1-label">Run Phase 1</span>
+          </button>
+        </div>
+      </section>
+
       <section class="card">
         <h3>Input and Output</h3>
         <div class="grid">
@@ -326,6 +344,84 @@
           <div><label>merged_groups_summary.csv</label><input name="merged_groups_summary_csv" value="{{ fn.get('merged_groups_summary_csv', 'merged_groups_summary.csv') }}" /></div>
           <div><label>originals_extraction_summary.csv</label><input name="originals_extraction_summary_csv" value="{{ fn.get('originals_extraction_summary_csv', 'originals_extraction_summary.csv') }}" /></div>
           <div><label>unique_images.csv</label><input name="unique_images_csv" value="{{ fn.get('unique_images_csv', 'unique_images.csv') }}" /></div>
+          <div><label>phase2_validation_report.csv</label><input name="phase2_validation_report_csv" value="{{ fn.get('phase2_validation_report_csv', 'phase2_validation_report.csv') }}" /></div>
+          <div><label>phase2_failed_images.csv</label><input name="phase2_failed_images_csv" value="{{ fn.get('phase2_failed_images_csv', 'phase2_failed_images.csv') }}" /></div>
+          <div><label>phase2_summary.csv</label><input name="phase2_summary_csv" value="{{ fn.get('phase2_summary_csv', 'phase2_summary.csv') }}" /></div>
+        </div>
+      </section>
+
+      <section id="phase2-panel" class="card full">
+        <h3>Phase 2: LLM Label Validation and Quality Check</h3>
+        <div class="grid">
+          {% set p2 = cfg.get('phase2', {}) %}
+          {% set p2_llm = p2.get('llm', {}) %}
+
+          <div>
+            <label>Phase 2 Input Folder (images to validate)</label>
+            <input name="phase2_input_folder" value="{{ p2.get('input_folder', '') }}" />
+          </div>
+
+          <label class="check"><input type="checkbox" name="phase2_enabled" {% if p2.get('enabled') %}checked{% endif %}/> Enable Phase 2 settings</label>
+
+          <div>
+            <label>Provider</label>
+            {% set p2_provider = p2_llm.get('provider', 'openai') %}
+            <select name="phase2_llm_provider">
+              <option value="openai" {% if p2_provider == 'openai' %}selected{% endif %}>openai</option>
+              <option value="gemini" {% if p2_provider == 'gemini' %}selected{% endif %}>gemini</option>
+              <option value="claude" {% if p2_provider in ['claude', 'anthropic'] %}selected{% endif %}>claude</option>
+            </select>
+          </div>
+
+          <div>
+            <label>Model</label>
+            <input name="phase2_llm_model" value="{{ p2_llm.get('model', 'gpt-4o-mini') }}" />
+          </div>
+          <div>
+            <label>API Key Env</label>
+            <input name="phase2_llm_api_key_env" value="{{ p2_llm.get('api_key_env', 'OPENAI_API_KEY') }}" />
+          </div>
+          <div>
+            <label>Temperature</label>
+            <input name="phase2_llm_temperature" value="{{ p2_llm.get('temperature', 0.0) }}" />
+          </div>
+          <div>
+            <label>Max Tokens (Claude)</label>
+            <input name="phase2_llm_max_tokens" value="{{ p2_llm.get('max_tokens', 300) }}" />
+          </div>
+
+          <div>
+            <label>Output Keys (comma separated)</label>
+            <input name="phase2_output_keys" value="{{ p2.get('output_keys', ['is_house', 'has_front_gate', 'is_blur', 'is_front_view']) | join(', ') }}" />
+          </div>
+          <div>
+            <label>Expected Values JSON</label>
+            <textarea name="phase2_expected_values">{{ p2.get('expected_values', {'is_house': true, 'has_front_gate': true, 'is_blur': false, 'is_front_view': true}) | tojson(indent=2) }}</textarea>
+          </div>
+          <div>
+            <label>Retry Max</label>
+            <input name="phase2_retry_max" value="{{ p2.get('retry_max', 3) }}" />
+          </div>
+          <div>
+            <label>Throttle Seconds</label>
+            <input name="phase2_throttle_seconds" value="{{ p2.get('throttle_seconds', 0.6) }}" />
+          </div>
+
+          <div>
+            <label>System Prompt</label>
+            <textarea name="phase2_system_prompt">{{ p2_llm.get('system_prompt', '') }}</textarea>
+          </div>
+          <div>
+            <label>User Prompt</label>
+            <textarea name="phase2_user_prompt">{{ p2_llm.get('user_prompt', '') }}</textarea>
+          </div>
+
+          <div class="run">
+            <button id="run-phase2-btn" class="btn btn-primary btn-loading" type="button">
+              <span class="btn-spinner" aria-hidden="true"></span>
+              <span id="run-phase2-label">Run Phase 2</span>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -333,13 +429,6 @@
         <button class="btn btn-primary" type="submit">Save Config</button>
       </div>
     </form>
-
-    <div class="run" style="margin-top: 12px;">
-      <button id="run-phase1-btn" class="btn btn-primary btn-loading" type="button">
-        <span class="btn-spinner" aria-hidden="true"></span>
-        <span id="run-btn-label">Run Phase 1 Pipeline</span>
-      </button>
-    </div>
 
     <div class="result" id="run-result-panel">
       <strong>Last Run Result</strong>
@@ -350,15 +439,23 @@
 
   <script>
     (function () {
-      const runBtn = document.getElementById("run-phase1-btn");
-      const runBtnLabel = document.getElementById("run-btn-label");
+      const runPhase1Btn = document.getElementById("run-phase1-btn");
+      const runPhase1Label = document.getElementById("run-phase1-label");
+      const runPhase2Btn = document.getElementById("run-phase2-btn");
+      const runPhase2Label = document.getElementById("run-phase2-label");
       const statusEl = document.getElementById("run-status");
       const resultEl = document.getElementById("run-result-json");
 
-      function setRunningState(isRunning) {
-        runBtn.disabled = isRunning;
-        runBtn.classList.toggle("is-running", isRunning);
-        runBtnLabel.textContent = isRunning ? "Running..." : "Run Phase 1 Pipeline";
+      function setRunningState(isRunning, phase) {
+        const isPhase2 = phase === "phase2";
+        const btn = isPhase2 ? runPhase2Btn : runPhase1Btn;
+        const label = isPhase2 ? runPhase2Label : runPhase1Label;
+        if (!btn || !label) {
+          return;
+        }
+        btn.disabled = isRunning;
+        btn.classList.toggle("is-running", isRunning);
+        label.textContent = isRunning ? "Running..." : (isPhase2 ? "Run Phase 2" : "Run Phase 1");
       }
 
       async function pollJob(jobId) {
@@ -369,13 +466,14 @@
         return res.json();
       }
 
-      async function startRun() {
-        setRunningState(true);
-        statusEl.textContent = "Starting run...";
-        resultEl.textContent = "Pipeline execution in progress...";
+      async function startRun(phase) {
+        const endpoint = phase === "phase2" ? "/ui/run/phase2/start" : "/ui/run/start";
+        setRunningState(true, phase);
+        statusEl.textContent = `Starting ${phase}...`;
+        resultEl.textContent = `${phase} execution in progress...`;
 
         try {
-          const startRes = await fetch("/ui/run/start", { method: "POST" });
+          const startRes = await fetch(endpoint, { method: "POST" });
           if (!startRes.ok) {
             throw new Error("Could not start run");
           }
@@ -386,37 +484,38 @@
             try {
               const job = await pollJob(jobId);
               if (job.status === "queued" || job.status === "running") {
-                statusEl.textContent = `Pipeline status: ${job.status}`;
+                statusEl.textContent = `${phase} status: ${job.status}`;
                 return;
               }
 
               clearInterval(timer);
-              setRunningState(false);
+              setRunningState(false, phase);
 
               if (job.status === "completed") {
-                statusEl.textContent = "Pipeline completed successfully.";
+                statusEl.textContent = `${phase} completed successfully.`;
                 if (job.result) {
                   resultEl.textContent = JSON.stringify(job.result, null, 2);
                 }
               } else {
-                statusEl.textContent = `Pipeline failed: ${job.error || "unknown error"}`;
+                statusEl.textContent = `${phase} failed: ${job.error || "unknown error"}`;
                 resultEl.textContent = `Run failed: ${job.error || "unknown error"}`;
               }
             } catch (pollErr) {
               clearInterval(timer);
-              setRunningState(false);
+              setRunningState(false, phase);
               statusEl.textContent = `Status check failed: ${pollErr.message}`;
               resultEl.textContent = `Status check failed: ${pollErr.message}`;
             }
           }, 1500);
         } catch (err) {
-          setRunningState(false);
+          setRunningState(false, phase);
           statusEl.textContent = `Could not start: ${err.message}`;
           resultEl.textContent = `Could not start: ${err.message}`;
         }
       }
 
-      runBtn.addEventListener("click", startRun);
+      runPhase1Btn.addEventListener("click", () => startRun("phase1"));
+      runPhase2Btn.addEventListener("click", () => startRun("phase2"));
     })();
   </script>
 </body>
