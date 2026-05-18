@@ -195,6 +195,41 @@
       color: #d7e1ff;
       font-weight: 600;
     }
+    .hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.4);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+    .modal-backdrop.is-open {
+      display: flex;
+    }
+    .modal-card {
+      width: min(460px, 92vw);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.2);
+    }
+    .modal-card h4 {
+      margin: 0 0 8px;
+      color: var(--brand);
+    }
+    .modal-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     @media (max-width: 780px) {
       .brand-row {
         flex-direction: column;
@@ -344,10 +379,9 @@
           <div><label>merged_groups_summary.csv</label><input name="merged_groups_summary_csv" value="{{ fn.get('merged_groups_summary_csv', 'merged_groups_summary.csv') }}" /></div>
           <div><label>originals_extraction_summary.csv</label><input name="originals_extraction_summary_csv" value="{{ fn.get('originals_extraction_summary_csv', 'originals_extraction_summary.csv') }}" /></div>
           <div><label>unique_images.csv</label><input name="unique_images_csv" value="{{ fn.get('unique_images_csv', 'unique_images.csv') }}" /></div>
-          <div><label>phase2_validation_report.csv</label><input name="phase2_validation_report_csv" value="{{ fn.get('phase2_validation_report_csv', 'phase2_validation_report.csv') }}" /></div>
-          <div><label>phase2_failed_images.csv</label><input name="phase2_failed_images_csv" value="{{ fn.get('phase2_failed_images_csv', 'phase2_failed_images.csv') }}" /></div>
-          <div><label>phase2_summary.csv</label><input name="phase2_summary_csv" value="{{ fn.get('phase2_summary_csv', 'phase2_summary.csv') }}" /></div>
+          <div><label>phase2 base name (used per provider in output/validation)</label><input name="phase2_validation_report_csv" value="{{ fn.get('phase2_validation_report_csv', 'phase2_validation_report.csv') }}" /></div>
         </div>
+        <div class="hint">Phase 2 writes one CSV per selected provider under output/validation, for example phase2_validation_report_openai.csv.</div>
       </section>
 
       <section id="phase2-panel" class="card full">
@@ -364,18 +398,21 @@
           <label class="check"><input type="checkbox" name="phase2_enabled" {% if p2.get('enabled') %}checked{% endif %}/> Enable Phase 2 settings</label>
 
           <div>
-            <label>Provider</label>
-            {% set p2_provider = p2_llm.get('provider', 'openai') %}
-            <select name="phase2_llm_provider">
-              <option value="openai" {% if p2_provider == 'openai' %}selected{% endif %}>openai</option>
-              <option value="gemini" {% if p2_provider == 'gemini' %}selected{% endif %}>gemini</option>
-              <option value="claude" {% if p2_provider in ['claude', 'anthropic'] %}selected{% endif %}>claude</option>
-            </select>
+            <label>Providers (comma separated for consensus, example: openai, gemini)</label>
+            <input name="phase2_llm_providers" value="{{ p2_llm.get('providers', [p2_llm.get('provider', 'openai')]) | join(', ') }}" />
           </div>
 
           <div>
             <label>Model</label>
             <input name="phase2_llm_model" value="{{ p2_llm.get('model', 'gpt-4o-mini') }}" />
+          </div>
+          <div>
+            <label>Provider Models JSON (optional)</label>
+            <textarea name="phase2_llm_models">{{ p2_llm.get('models', {}) | tojson(indent=2) }}</textarea>
+          </div>
+          <div>
+            <label>Provider API Key Envs JSON (optional)</label>
+            <textarea name="phase2_llm_api_key_envs">{{ p2_llm.get('api_key_envs', {'openai': 'OPENAI_API_KEY', 'gemini': 'GEMINI_API_KEY', 'claude': 'ANTHROPIC_API_KEY'}) | tojson(indent=2) }}</textarea>
           </div>
           <div>
             <label>API Key Env</label>
@@ -393,10 +430,6 @@
           <div>
             <label>Output Keys (comma separated)</label>
             <input name="phase2_output_keys" value="{{ p2.get('output_keys', ['is_house', 'has_front_gate', 'is_blur', 'is_front_view']) | join(', ') }}" />
-          </div>
-          <div>
-            <label>Expected Values JSON</label>
-            <textarea name="phase2_expected_values">{{ p2.get('expected_values', {'is_house': true, 'has_front_gate': true, 'is_blur': false, 'is_front_view': true}) | tojson(indent=2) }}</textarea>
           </div>
           <div>
             <label>Retry Max</label>
@@ -437,6 +470,18 @@
     </div>
   </div>
 
+  <div id="dirty-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="dirty-modal-title">
+    <div class="modal-card">
+      <h4 id="dirty-modal-title">Unsaved Config Changes</h4>
+      <div>You changed config values. Save changes before running, or discard unsaved edits?</div>
+      <div class="modal-actions">
+        <button id="dirty-save-run" class="btn btn-primary" type="button">Save and Run</button>
+        <button id="dirty-discard-run" class="btn btn-muted" type="button">Discard and Run</button>
+        <button id="dirty-cancel" class="btn btn-muted" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function () {
       const runPhase1Btn = document.getElementById("run-phase1-btn");
@@ -445,6 +490,61 @@
       const runPhase2Label = document.getElementById("run-phase2-label");
       const statusEl = document.getElementById("run-status");
       const resultEl = document.getElementById("run-result-json");
+      const configForm = document.querySelector('form[action="/ui/save"]');
+      const dirtyModal = document.getElementById("dirty-modal");
+      const dirtySaveRunBtn = document.getElementById("dirty-save-run");
+      const dirtyDiscardRunBtn = document.getElementById("dirty-discard-run");
+      const dirtyCancelBtn = document.getElementById("dirty-cancel");
+
+      let isDirty = false;
+
+      function markDirty() {
+        isDirty = true;
+      }
+
+      configForm.querySelectorAll("input, select, textarea").forEach((el) => {
+        el.addEventListener("input", markDirty);
+        el.addEventListener("change", markDirty);
+      });
+
+      function saveConfigSilently() {
+        const formData = new FormData(configForm);
+        return fetch("/ui/save", {
+          method: "POST",
+          body: formData,
+        }).then((res) => {
+          if (!res.ok) {
+            throw new Error("Could not save config");
+          }
+          isDirty = false;
+        });
+      }
+
+      function askDirtyDecision() {
+        return new Promise((resolve) => {
+          dirtyModal.classList.add("is-open");
+
+          const cleanup = () => {
+            dirtyModal.classList.remove("is-open");
+            dirtySaveRunBtn.onclick = null;
+            dirtyDiscardRunBtn.onclick = null;
+            dirtyCancelBtn.onclick = null;
+          };
+
+          dirtySaveRunBtn.onclick = () => {
+            cleanup();
+            resolve("save");
+          };
+          dirtyDiscardRunBtn.onclick = () => {
+            cleanup();
+            resolve("discard");
+          };
+          dirtyCancelBtn.onclick = () => {
+            cleanup();
+            resolve("cancel");
+          };
+        });
+      }
 
       function setRunningState(isRunning, phase) {
         const isPhase2 = phase === "phase2";
@@ -468,9 +568,29 @@
 
       async function startRun(phase) {
         const endpoint = phase === "phase2" ? "/ui/run/phase2/start" : "/ui/run/start";
+
+        if (isDirty) {
+          const decision = await askDirtyDecision();
+          if (decision === "cancel") {
+            statusEl.textContent = "Run canceled.";
+            return;
+          }
+          if (decision === "save") {
+            try {
+              await saveConfigSilently();
+            } catch (err) {
+              statusEl.textContent = `Save failed: ${err.message}`;
+              return;
+            }
+          } else if (decision === "discard") {
+            configForm.reset();
+            isDirty = false;
+          }
+        }
+
         setRunningState(true, phase);
         statusEl.textContent = `Starting ${phase}...`;
-        resultEl.textContent = `${phase} execution in progress...`;
+        resultEl.textContent = "";
 
         try {
           const startRes = await fetch(endpoint, { method: "POST" });
@@ -483,6 +603,10 @@
           const timer = setInterval(async () => {
             try {
               const job = await pollJob(jobId);
+              const logsText = (job.logs || []).join("\n");
+              if (logsText) {
+                resultEl.textContent = logsText;
+              }
               if (job.status === "queued" || job.status === "running") {
                 statusEl.textContent = `${phase} status: ${job.status}`;
                 return;
@@ -494,11 +618,12 @@
               if (job.status === "completed") {
                 statusEl.textContent = `${phase} completed successfully.`;
                 if (job.result) {
-                  resultEl.textContent = JSON.stringify(job.result, null, 2);
+                  const jsonPart = JSON.stringify(job.result, null, 2);
+                  resultEl.textContent = logsText ? `${logsText}\n\n${jsonPart}` : jsonPart;
                 }
               } else {
                 statusEl.textContent = `${phase} failed: ${job.error || "unknown error"}`;
-                resultEl.textContent = `Run failed: ${job.error || "unknown error"}`;
+                resultEl.textContent = logsText ? `${logsText}\n\nRun failed: ${job.error || "unknown error"}` : `Run failed: ${job.error || "unknown error"}`;
               }
             } catch (pollErr) {
               clearInterval(timer);

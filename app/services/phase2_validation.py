@@ -187,12 +187,33 @@ def _call_provider(image_path: str, llm_cfg: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"Unsupported phase2 provider: {provider}")
 
 
-def _resolve_bool_expectations(expected_values: dict[str, Any]) -> dict[str, bool]:
-    out: dict[str, bool] = {}
-    for key, value in (expected_values or {}).items():
-        if isinstance(key, str) and key.strip():
-            out[key.strip()] = _to_bool(value)
-    return out
+def _default_model_for_provider(provider: str) -> str:
+    p = str(provider).strip().lower()
+    if p == "openai":
+        return "gpt-4o-mini"
+    if p == "gemini":
+        return "models/gemini-2.0-flash"
+    return "claude-3-5-sonnet-latest"
+
+
+def _default_api_env_for_provider(provider: str) -> str:
+    p = str(provider).strip().lower()
+    if p == "openai":
+        return "OPENAI_API_KEY"
+    if p == "gemini":
+        return "GEMINI_API_KEY"
+    return "ANTHROPIC_API_KEY"
+
+
+def _resolve_api_key_env(provider: str, llm_cfg: dict[str, Any], configured_envs: dict[str, Any]) -> str:
+    provider_key = str(provider).strip().lower()
+    provider_specific = configured_envs.get(provider_key)
+    if provider_specific and str(provider_specific).strip():
+        return str(provider_specific).strip()
+    fallback = llm_cfg.get("api_key_env")
+    if fallback and str(fallback).strip():
+        return str(fallback).strip()
+    return _default_api_env_for_provider(provider_key)
 
 
 def run_phase2_validation(
@@ -202,6 +223,7 @@ def run_phase2_validation(
     output_dir: str,
     unique_images_csv_path: str,
     unique_images_dir_path: str,
+    log_fn=None,
 ) -> dict[str, Any]:
     phase2_cfg = cfg.get("phase2") or {}
     llm_cfg = phase2_cfg.get("llm") or {}
@@ -213,121 +235,133 @@ def run_phase2_validation(
     image_names = _read_unique_images(unique_images_csv, unique_images_dir)
 
     output_keys = [str(k).strip() for k in (phase2_cfg.get("output_keys") or []) if str(k).strip()]
-    expected_values = _resolve_bool_expectations(phase2_cfg.get("expected_values") or {})
     retries = int(phase2_cfg.get("retry_max") or 3)
     throttle_seconds = float(phase2_cfg.get("throttle_seconds") or 0.0)
 
-    rows: list[dict[str, Any]] = []
-    failed_rows: list[dict[str, Any]] = []
+    providers = [
+        str(p).strip().lower()
+        for p in (llm_cfg.get("providers") or [llm_cfg.get("provider") or "openai"])
+        if str(p).strip()
+    ]
+    if not providers:
+        providers = ["openai"]
 
-    for image_name in image_names:
-        image_path = unique_images_dir / image_name
-        if not image_path.exists():
-            image_path = source_images_dir / image_name
-
-        base_row: dict[str, Any] = {
-            "image_name": image_name,
-            "image_path": str(image_path),
-            "llm_provider": llm_cfg.get("provider"),
-            "model": llm_cfg.get("model"),
-        }
-
-        if not image_path.exists() or not image_path.is_file():
-            row = {
-                **base_row,
-                "overall_valid": False,
-                "validation_error": "file_not_found",
-                "raw_json": "{}",
-            }
-            for key in output_keys:
-                row[key] = None
-            rows.append(row)
-            failed_rows.append(row)
-            continue
-
-        result_obj: dict[str, Any] | None = None
-        last_error = None
-        for _ in range(retries):
-            try:
-                result_obj = _call_provider(str(image_path), llm_cfg)
-                last_error = None
-                break
-            except Exception as exc:
-                last_error = str(exc)
-                if throttle_seconds > 0:
-                    time.sleep(throttle_seconds)
-
-        if result_obj is None:
-            row = {
-                **base_row,
-                "overall_valid": False,
-                "validation_error": last_error or "llm_failed",
-                "raw_json": "{}",
-            }
-            for key in output_keys:
-                row[key] = None
-            rows.append(row)
-            failed_rows.append(row)
-            if throttle_seconds > 0:
-                time.sleep(throttle_seconds)
-            continue
-
-        selected_values: dict[str, Any] = {}
-        for key in output_keys:
-            selected_values[key] = _to_bool(result_obj.get(key))
-
-        mismatches: list[str] = []
-        for key, expected in expected_values.items():
-            actual = _to_bool(result_obj.get(key))
-            if actual != expected:
-                mismatches.append(key)
-
-        overall_valid = len(mismatches) == 0
-
-        row = {
-            **base_row,
-            **selected_values,
-            "overall_valid": bool(overall_valid),
-            "failed_checks": ";".join(mismatches),
-            "validation_error": "",
-            "raw_json": json.dumps(result_obj, ensure_ascii=True),
-        }
-        rows.append(row)
-        if not overall_valid:
-            failed_rows.append(row)
-
-        if throttle_seconds > 0:
-            time.sleep(throttle_seconds)
-
-    results_df = pd.DataFrame(rows)
-    failed_df = pd.DataFrame(failed_rows)
+    configured_models = llm_cfg.get("models") or {}
+    if not isinstance(configured_models, dict):
+        configured_models = {}
+    configured_api_key_envs = llm_cfg.get("api_key_envs") or {}
+    if not isinstance(configured_api_key_envs, dict):
+        configured_api_key_envs = {}
 
     phase2_report_name = filenames_cfg.get("phase2_validation_report_csv") or "phase2_validation_report.csv"
-    phase2_failed_name = filenames_cfg.get("phase2_failed_images_csv") or "phase2_failed_images.csv"
-    phase2_summary_name = filenames_cfg.get("phase2_summary_csv") or "phase2_summary.csv"
+    base_stem = Path(str(phase2_report_name)).stem
+    validation_dir = Path(output_dir) / "validation"
+    validation_dir.mkdir(parents=True, exist_ok=True)
 
-    phase2_report_csv = Path(output_dir) / str(phase2_report_name)
-    phase2_failed_csv = Path(output_dir) / str(phase2_failed_name)
-    phase2_summary_csv = Path(output_dir) / str(phase2_summary_name)
+    provider_csv_files: dict[str, str] = {}
+    provider_counts: dict[str, int] = {}
 
-    results_df.to_csv(phase2_report_csv, index=False)
-    failed_df.to_csv(phase2_failed_csv, index=False)
+    if callable(log_fn):
+        log_fn(
+            "Phase 2 started in consensus mode: "
+            f"providers={','.join(providers)} images={len(image_names)}"
+        )
 
-    summary = {
-        "total_images_checked": int(len(results_df)),
-        "overall_valid_images": int(results_df["overall_valid"].sum()) if not results_df.empty else 0,
-        "failed_images": int(len(failed_df)),
-        "provider": str(llm_cfg.get("provider") or "openai"),
-        "model": str(llm_cfg.get("model") or ""),
-        "output_keys": "|".join(output_keys),
-        "expected_values": json.dumps(expected_values, ensure_ascii=True),
-    }
-    pd.DataFrame([summary]).to_csv(phase2_summary_csv, index=False)
+    for provider in providers:
+        provider_rows: list[dict[str, Any]] = []
+        model_name = str(configured_models.get(provider) or llm_cfg.get("model") or _default_model_for_provider(provider))
+        provider_cfg = dict(llm_cfg)
+        provider_cfg["provider"] = provider
+        provider_cfg["model"] = model_name
+        provider_cfg["api_key_env"] = _resolve_api_key_env(provider, llm_cfg, configured_api_key_envs)
+
+        if callable(log_fn):
+            log_fn(f"Starting provider={provider} model={model_name}")
+
+        for idx, image_name in enumerate(image_names, start=1):
+            image_path = unique_images_dir / image_name
+            if not image_path.exists():
+                image_path = source_images_dir / image_name
+
+            if callable(log_fn):
+                log_fn(f"[{provider}] [{idx}/{len(image_names)}] {image_name}")
+
+            base_row: dict[str, Any] = {
+                "image_name": image_name,
+                "image_path": str(image_path),
+                "llm_provider": provider,
+                "model": model_name,
+            }
+
+            if not image_path.exists() or not image_path.is_file():
+                row = {
+                    **base_row,
+                    "validation_error": "file_not_found",
+                    "raw_json": "{}",
+                }
+                for key in output_keys:
+                    row[key] = None
+                provider_rows.append(row)
+                continue
+
+            result_obj: dict[str, Any] | None = None
+            last_error = None
+            for _ in range(retries):
+                try:
+                    result_obj = _call_provider(str(image_path), provider_cfg)
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = str(exc)
+                    if throttle_seconds > 0:
+                        time.sleep(throttle_seconds)
+
+            if result_obj is None:
+                row = {
+                    **base_row,
+                    "validation_error": last_error or "llm_failed",
+                    "raw_json": "{}",
+                }
+                for key in output_keys:
+                    row[key] = None
+                provider_rows.append(row)
+                if throttle_seconds > 0:
+                    time.sleep(throttle_seconds)
+                continue
+
+            extracted_values: dict[str, Any] = {}
+            for key in output_keys:
+                extracted_values[key] = result_obj.get(key)
+
+            row = {
+                **base_row,
+                **extracted_values,
+                "validation_error": "",
+                "raw_json": json.dumps(result_obj, ensure_ascii=True),
+            }
+            provider_rows.append(row)
+
+            if throttle_seconds > 0:
+                time.sleep(throttle_seconds)
+
+        provider_df = pd.DataFrame(provider_rows)
+        provider_slug = provider.replace("/", "_").replace(" ", "_")
+        provider_csv = validation_dir / f"{base_stem}_{provider_slug}.csv"
+        provider_df.to_csv(provider_csv, index=False)
+        provider_csv_files[provider] = str(provider_csv)
+        provider_counts[provider] = int(len(provider_df))
+
+        if callable(log_fn):
+            log_fn(f"Completed provider={provider} rows={len(provider_df)} output={provider_csv}")
+
+    if callable(log_fn):
+        log_fn("Phase 2 finished for all selected providers")
 
     return {
         "enabled": True,
-        "summary": summary,
-        "report_csv": str(phase2_report_csv),
-        "failed_images_csv": str(phase2_failed_csv),
-        "summary_csv": str(phase2_summary_csv),
+        "mode": "consensus" if len(providers) > 1 else "single_provider",
+        "validation_dir": str(validation_dir),
+        "providers": providers,
+        "rows_per_provider": provider_counts,
+        "csv_files": provider_csv_files,
     }

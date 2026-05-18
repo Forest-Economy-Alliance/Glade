@@ -29,6 +29,16 @@ app.mount(
 LAST_RUN_RESULT = None
 RUN_JOBS = {}
 
+
+def _append_job_log(job_id: str, message: str):
+    job = RUN_JOBS.get(job_id)
+    if not job:
+        return
+    logs = job.setdefault("logs", [])
+    logs.append(str(message))
+    if len(logs) > 300:
+        del logs[:-300]
+
 @app.get("/")
 def health():
     return {"status": "ok"} 
@@ -133,17 +143,20 @@ async def ui_save_config(request: Request):
     cfg.set("filenames.originals_extraction_summary_csv", str(form.get("originals_extraction_summary_csv") or "originals_extraction_summary.csv"))
     cfg.set("filenames.unique_images_csv", str(form.get("unique_images_csv") or "unique_images.csv"))
     cfg.set("filenames.phase2_validation_report_csv", str(form.get("phase2_validation_report_csv") or "phase2_validation_report.csv"))
-    cfg.set("filenames.phase2_failed_images_csv", str(form.get("phase2_failed_images_csv") or "phase2_failed_images.csv"))
-    cfg.set("filenames.phase2_summary_csv", str(form.get("phase2_summary_csv") or "phase2_summary.csv"))
 
     cfg.set("phase2.enabled", _as_bool(form.get("phase2_enabled")))
     cfg.set("phase2.output_keys", _as_list(form.get("phase2_output_keys")))
-    cfg.set("phase2.expected_values", _as_json_dict(form.get("phase2_expected_values"), {}))
     cfg.set("phase2.retry_max", _as_int(form.get("phase2_retry_max"), 3))
     cfg.set("phase2.throttle_seconds", _as_float(form.get("phase2_throttle_seconds"), 0.0))
     cfg.set("phase2.input_folder", str(form.get("phase2_input_folder") or ""))
 
-    cfg.set("phase2.llm.provider", str(form.get("phase2_llm_provider") or "openai"))
+    providers = _as_list(form.get("phase2_llm_providers"))
+    if not providers:
+        providers = [str(form.get("phase2_llm_provider") or "openai")]
+    cfg.set("phase2.llm.providers", providers)
+    cfg.set("phase2.llm.models", _as_json_dict(form.get("phase2_llm_models"), {}))
+    cfg.set("phase2.llm.api_key_envs", _as_json_dict(form.get("phase2_llm_api_key_envs"), {}))
+    cfg.set("phase2.llm.provider", providers[0])
     cfg.set("phase2.llm.model", str(form.get("phase2_llm_model") or "gpt-4o-mini"))
     cfg.set("phase2.llm.api_key_env", str(form.get("phase2_llm_api_key_env") or "OPENAI_API_KEY"))
     cfg.set("phase2.llm.temperature", _as_float(form.get("phase2_llm_temperature"), 0.0))
@@ -165,29 +178,43 @@ def ui_run_pipeline():
 def _run_pipeline_job(job_id: str):
     try:
         RUN_JOBS[job_id]["status"] = "running"
-        result = run_pipeline(run_phase2=False)
+        _append_job_log(job_id, "Phase 1 started")
+
+        def log_fn(msg: str):
+            _append_job_log(job_id, msg)
+
+        result = run_pipeline(run_phase2=False, log_fn=log_fn)
         RUN_JOBS[job_id]["status"] = "completed"
         RUN_JOBS[job_id]["result"] = result
+        _append_job_log(job_id, "Phase 1 completed")
     except Exception as exc:
         RUN_JOBS[job_id]["status"] = "failed"
         RUN_JOBS[job_id]["error"] = str(exc)
+        _append_job_log(job_id, f"Phase 1 failed: {exc}")
 
 
 def _run_phase2_job(job_id: str):
     try:
         RUN_JOBS[job_id]["status"] = "running"
-        result = run_phase2_only()
+        _append_job_log(job_id, "Phase 2 started")
+
+        def log_fn(msg: str):
+            _append_job_log(job_id, msg)
+
+        result = run_phase2_only(log_fn=log_fn)
         RUN_JOBS[job_id]["status"] = "completed"
         RUN_JOBS[job_id]["result"] = result
+        _append_job_log(job_id, "Phase 2 completed")
     except Exception as exc:
         RUN_JOBS[job_id]["status"] = "failed"
         RUN_JOBS[job_id]["error"] = str(exc)
+        _append_job_log(job_id, f"Phase 2 failed: {exc}")
 
 
 @app.post("/ui/run/start")
 def ui_run_start():
     job_id = str(uuid.uuid4())
-    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase1"}
+    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase1", "logs": []}
     thread = threading.Thread(target=_run_pipeline_job, args=(job_id,), daemon=True)
     thread.start()
     return {"job_id": job_id, "status": "queued"}
@@ -196,7 +223,7 @@ def ui_run_start():
 @app.post("/ui/run/phase2/start")
 def ui_run_phase2_start():
     job_id = str(uuid.uuid4())
-    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase2"}
+    RUN_JOBS[job_id] = {"status": "queued", "result": None, "error": None, "phase": "phase2", "logs": []}
     thread = threading.Thread(target=_run_phase2_job, args=(job_id,), daemon=True)
     thread.start()
     return {"job_id": job_id, "status": "queued"}
@@ -212,6 +239,7 @@ def ui_run_status(job_id: str):
         "result": job.get("result"),
         "error": job.get("error"),
         "phase": job.get("phase"),
+        "logs": job.get("logs", []),
     }
 
 
@@ -227,10 +255,15 @@ def _normalize_candidate_name(name: str, input_names: set[str]) -> str:
     return name
 
 @app.post("/run")
-def run_pipeline(run_phase2: bool = False):
+def run_pipeline(run_phase2: bool = False, log_fn=None):
     global LAST_RUN_RESULT
     # Load defaults from YAML config
-    print("Loading configuration...")
+    def _log(message: str):
+        print(message)
+        if callable(log_fn):
+            log_fn(message)
+
+    _log("Loading configuration...")
     cfg = Config()
 
     # Resolve inputs with request overrides where available
@@ -243,7 +276,7 @@ def run_pipeline(run_phase2: bool = False):
     merged_groups_summary_csv_name = cfg.get("filenames.merged_groups_summary_csv", "merged_groups_summary.csv")
     originals_extraction_summary_csv_name = cfg.get("filenames.originals_extraction_summary_csv", "originals_extraction_summary.csv")
     unique_images_csv_name = cfg.get("filenames.unique_images_csv", "unique_images.csv")
-    print(f"Running pipeline with image_dir={image_dir}, output_dir={output_dir}")
+    _log(f"Running pipeline with image_dir={image_dir}, output_dir={output_dir}")
 
     # Run exact duplicate detection (pHash-based)
     exact_dups_df, df = find_exact_duplicates(
@@ -259,7 +292,7 @@ def run_pipeline(run_phase2: bool = False):
     removed_df = df[duplicate_mask].copy()
     kept_df = df[~duplicate_mask].copy()
 
-    print("")
+    _log("Running near-duplicate clustering...")
 
     
     # Near-duplicate clustering based on active method in config
@@ -284,7 +317,7 @@ def run_pipeline(run_phase2: bool = False):
             )
             near_csv_ready = True
         except (FileNotFoundError, ValueError) as exc:
-            print(f"Near-duplicate CSV conversion skipped: {exc}")
+            _log(f"Near-duplicate CSV conversion skipped: {exc}")
 
     verified_csv = None
     confirmed = set()
@@ -297,24 +330,24 @@ def run_pipeline(run_phase2: bool = False):
         if near_csv_ready and os.path.exists(near_csv):
             try:
                 provider = llm_cfg.get("provider")
-                print(f"Running LLM verification on {near_csv} (provider={provider})")
+                _log(f"Running LLM verification on {near_csv} (provider={provider})")
                 confirmed, rejected, failed, verified_csv = llm_verify_run(
                     csv_path=near_csv,
                     image_dir=groups_folder,
                     provider=provider,
                     out_csv=verified_csv,
                 )
-                print(f"LLM verification completed: {len(confirmed)} confirmed duplicates, {len(rejected)} rejected, {len(failed)} failed checks")
+                _log(f"LLM verification completed: {len(confirmed)} confirmed duplicates, {len(rejected)} rejected, {len(failed)} failed checks")
             
                 
   
             except Exception as e:
-                print(f"LLM verification failed: {e}")
+                _log(f"LLM verification failed: {e}")
                 verified_csv = None
         else:
-            print("Near-duplicates CSV not generated in this run; skipping LLM verification")
+            _log("Near-duplicates CSV not generated in this run; skipping LLM verification")
     else:
-        print("LLM verification disabled in config; skipping")
+        _log("LLM verification disabled in config; skipping")
 
     exact_duplicate_names = set(exact_dups_df["image_name"].astype(str).tolist()) if not exact_dups_df.empty else set()
     near_llm_confirmed_names = {
@@ -341,7 +374,7 @@ def run_pipeline(run_phase2: bool = False):
                     ].astype(str).tolist()
                 }
         except Exception as exc:
-            print(f"Could not parse verified CSV for group copy: {exc}")
+            _log(f"Could not parse verified CSV for group copy: {exc}")
 
     if not llm_confirmed_group_ids and confirmed and not near_groups_df.empty:
         normalized_confirmed = {
@@ -408,14 +441,14 @@ def run_pipeline(run_phase2: bool = False):
             summary_csv_path=Path(merged_groups_summary_csv),
         )
         merged_duplicate_groups = int(len(merged_summary_df))
-        print(
+        _log(
             f"Merged duplicate groups created: {merged_duplicate_groups} "
             f"(output={merged_duplicates_dir})"
         )
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Skipping merged duplicate group build: {exc}")
+        _log(f"Skipping merged duplicate group build: {exc}")
     except Exception as exc:
-        print(f"Merged duplicate group build failed: {exc}")
+        _log(f"Merged duplicate group build failed: {exc}")
 
     originals_dir = os.path.join(output_dir, "duplicates_original")
     originals_extraction_summary_csv = None
@@ -435,11 +468,11 @@ def run_pipeline(run_phase2: bool = False):
         originals_extracted_count = int(copied_count)
         originals_extraction_summary_csv = os.path.join(output_dir, originals_extraction_summary_csv_name)
         originals_df.to_csv(originals_extraction_summary_csv, index=False)
-        print(f"Extracted {copied_count} original images to: {originals_dir}")
+        _log(f"Extracted {copied_count} original images to: {originals_dir}")
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Skipping original extraction: {exc}")
+        _log(f"Skipping original extraction: {exc}")
     except Exception as exc:
-        print(f"Original extraction failed: {exc}")
+        _log(f"Original extraction failed: {exc}")
 
     unique_csv = os.path.join(output_dir, unique_images_csv_name)
     unique_df = pd.DataFrame({"image_name": unique_image_names})
@@ -462,9 +495,9 @@ def run_pipeline(run_phase2: bool = False):
                 "enabled": True,
                 "error": str(exc),
             }
-            print(f"Phase 2 failed after Phase 1: {exc}")
+            _log(f"Phase 2 failed after Phase 1: {exc}")
 
-    print(
+    _log(
         f"Total input images: {len(all_input_names)} | "
         f"Exact duplicate images: {len(exact_duplicate_names)} | "
         f"Near-duplicate confirmed by LLM: {len(near_llm_confirmed_names)} | "
@@ -503,7 +536,7 @@ def run_pipeline(run_phase2: bool = False):
 
 
 @app.post("/run/phase2")
-def run_phase2_only():
+def run_phase2_only(log_fn=None):
     global LAST_RUN_RESULT
     cfg = Config()
 
@@ -514,12 +547,16 @@ def run_phase2_only():
     configured_phase2_folder = str(cfg.get("phase2.input_folder") or "").strip()
     unique_images_dir = configured_phase2_folder or os.path.join(output_dir, "unique_images")
 
+    if callable(log_fn):
+        log_fn(f"Phase 2 input folder: {unique_images_dir}")
+
     phase2_result = run_phase2_validation(
         cfg=cfg,
         image_dir=unique_images_dir,
         output_dir=output_dir,
         unique_images_csv_path=unique_csv,
         unique_images_dir_path=unique_images_dir,
+        log_fn=log_fn,
     )
 
     result = {

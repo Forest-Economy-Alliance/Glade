@@ -20,7 +20,7 @@ similarity_check_llm:
 duplicate_detection:
   similarity_threshold: 0.85
 output:
-  base_folder: ../test_outputs4
+  base_folder: ../test_outputs1
 near_duplicates:
   active_method: hsv_cosine
   methods:
@@ -57,30 +57,68 @@ metadata:
   datetime_column: hh_information-datetime
 phase2:
   enabled: false
-  input_folder: ../test_outputs4/unique_images
+  input_folder: ../test_outputs1/unique_images
   output_keys:
   - is_house
   - has_front_gate
   - is_blur
   - is_front_view
-  expected_values:
-    is_house: true
-    has_front_gate: true
-    is_blur: false
-    is_front_view: true
   retry_max: 3
   throttle_seconds: 0.6
   llm:
+    providers:
+    - openai
     provider: openai
     model: gpt-4o-mini
+    models: {}
+    api_key_envs:
+      openai: OPENAI_API_KEY
+      gemini: GEMINI_API_KEY
+      claude: ANTHROPIC_API_KEY
     api_key_env: OPENAI_API_KEY
     temperature: 0.0
     max_tokens: 300
-    system_prompt: 'You are a careful, conservative, context-aware vision assistant
-      analyzing images from rural and semi-rural India. Respond only with compact
-      JSON and no extra text.'
-    user_prompt: 'Analyze this image and return strict JSON with keys: is_house,
-      has_front_gate, is_blur, is_front_view. Use true or false only.'
+    system_prompt: "You are a careful, conservative, context-aware vision assistant\
+      \ analyzing images from rural and semi-rural India.\r\n\r\nHomes may be kutcha\
+      \ or pucca, temporary or permanent. Entrances are often informal, improvised,\
+      \ partially occluded,\r\nor not visually distinct. Many houses do NOT have a\
+      \ conventional front door or metal gate.\r\n\r\nImages may suffer from low light,\
+      \ dust, shadows, motion blur, low resolution, camera shake, or occlusion by\r\
+      \npeople, animals, construction materials, vegetation, or household items.\r\
+      \n\r\nJudge human use and access patterns, not architectural perfection.\r\n\
+      \r\nBefore answering, internally reason carefully about:\r\n- whether the structure\
+      \ is a human dwelling\r\n- whether a person could reasonably enter it\r\n- whether\
+      \ the image quality allows reliable judgment\r\n- whether the camera faces the\
+      \ likely entry side\r\n\r\nDo NOT include reasoning in the output.\r\n\r\nIMPORTANT\
+      \ BIAS:\r\n- False positives are worse than false negatives.\r\n- When uncertain,\
+      \ always prefer false.\r\n\r\nRespond ONLY with a compact JSON object containing\
+      \ exactly four boolean fields using true/false (lowercase).\r\nNo explanations.\
+      \ No extra keys. No trailing text.\r\n\r\nDefinitions:\r\n\r\nis_house:\r\n\
+      A structure plausibly used for human residence. Includes kutcha houses, pucca\
+      \ houses, huts, brick or mud structures,\r\nhouses with tin/asbestos/thatch\
+      \ roofs, or mixed materials.\r\nExclude animal sheds, storage-only structures,\
+      \ ruins, or abandoned buildings.\r\n\r\nhas_front_gate:\r\nTRUE if there is\
+      \ ANY identifiable or inferable human entry point.\r\nThis does NOT require\
+      \ a manufactured door or gate.\r\n\r\nCount as TRUE if you can reasonably infer:\r\
+      \n- a door, shutter, or doorway-sized opening\r\n- an opening covered by cloth,\
+      \ plastic, tarpaulin, curtain, sack, bamboo mat, or tin sheet\r\n- a compound\
+      \ or courtyard entry marked by a gap in a wall, fence, hedge, rope, or wire\r\
+      \n- steps, ramp, threshold stone, worn footpath, or cleared opening leading\
+      \ into the dwelling\r\n\r\nCount as FALSE if:\r\n- no entry path or opening\
+      \ is visible or inferable\r\n- only windows, vents, or very small openings are\
+      \ visible\r\n- the opening is clearly a side/back service opening and the main\
+      \ entry is not visible\r\n- the structure appears sealed, abandoned, or non-residential\r\
+      \n\r\nis_blur:\r\nTRUE if motion blur, focus blur, or extreme low quality prevents\
+      \ reliable identification of the structure\r\nor entry area. Low resolution\
+      \ alone counts as blur only if entry-related details are unreadable.\r\n\r\n\
+      is_front_view:\r\nTRUE if the camera primarily faces the main facade or the\
+      \ most likely human entry side.\r\nFALSE for clear side, rear, or oblique views\
+      \ where the main entry is not visible.\r\n\r\nConsistency rules:\r\n- If is_house\
+      \ is false, has_front_gate must be false.\r\n- If has_front_gate is true, is_house\
+      \ must be true.\r\n- If is_blur is true, set all other fields to false.\r\n\
+      - A house may have an entry even if is_front_view is false."
+    user_prompt: 'Analyze this image and return strict JSON with keys: is_house, has_front_gate,
+      is_blur, is_front_view. Use true or false only.'
 filenames:
   exact_duplicates_csv: exact_duplicates.csv
   near_duplicates_csv: near_duplicates.csv
@@ -90,5 +128,3 @@ filenames:
   originals_extraction_summary_csv: originals_extraction_summary.csv
   unique_images_csv: unique_images.csv
   phase2_validation_report_csv: phase2_validation_report.csv
-  phase2_failed_images_csv: phase2_failed_images.csv
-  phase2_summary_csv: phase2_summary.csv
