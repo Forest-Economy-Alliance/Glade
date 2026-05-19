@@ -1,4 +1,4 @@
-# Vision Data Cleaning Pipeline
+# Glade
 
 Configurable FastAPI pipeline for image de-duplication and dataset preparation.
 
